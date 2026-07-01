@@ -1,0 +1,19 @@
+# Render blueprint for the Checkit Health FastAPI backend.
+# Deploy: push to GitHub, then in the Render dashboard "New +" -> "Blueprint"
+# and point it at this repo. Set the secret env vars (marked sync:false) in the
+# dashboard after the first deploy.
+services:
+  - type: web
+    name: checkit-health-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GOOGLE_FACT_CHECK_KEY
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.11.9"

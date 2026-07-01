@@ -19,9 +19,20 @@ CREATE TABLE IF NOT EXISTS claims (
     topic TEXT,
     confidence REAL,
     timestamp_processed TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending_fact_check'
+    status TEXT NOT NULL DEFAULT 'pending_fact_check',
+    fact_check_verdict TEXT,
+    fact_check_source TEXT,
+    fact_check_url TEXT
 );
 """
+
+# Columns added after the original schema shipped. Applied on every write so
+# databases created by earlier runs pick them up without a manual migration.
+_MIGRATIONS = (
+    "ALTER TABLE claims ADD COLUMN fact_check_verdict TEXT",
+    "ALTER TABLE claims ADD COLUMN fact_check_source TEXT",
+    "ALTER TABLE claims ADD COLUMN fact_check_url TEXT",
+)
 
 
 def build_records(filtered: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -41,6 +52,9 @@ def build_records(filtered: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "confidence": c["confidence"],
             "timestamp_processed": processed_at,
             "status": "pending_fact_check",
+            "fact_check_verdict": None,
+            "fact_check_source": None,
+            "fact_check_url": None,
         })
     return records
 
@@ -58,14 +72,21 @@ def write_sqlite(records: List[Dict[str, Any]], db_path: str) -> None:
     conn = sqlite3.connect(db)
     try:
         conn.execute(SCHEMA)
+        for stmt in _MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass  # column already exists
         conn.executemany(
             """
             INSERT OR REPLACE INTO claims
               (post_id, username, text, timestamp, retweet_count, like_count,
-               claim, topic, confidence, timestamp_processed, status)
+               claim, topic, confidence, timestamp_processed, status,
+               fact_check_verdict, fact_check_source, fact_check_url)
             VALUES
               (:post_id, :username, :text, :timestamp, :retweet_count, :like_count,
-               :claim, :topic, :confidence, :timestamp_processed, :status)
+               :claim, :topic, :confidence, :timestamp_processed, :status,
+               :fact_check_verdict, :fact_check_source, :fact_check_url)
             """,
             records,
         )

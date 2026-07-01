@@ -1,0 +1,119 @@
+"""FastAPI wrapper around the Checkit Health pipeline.
+
+Exposes the existing classifier over HTTP without touching run.py or the CLI.
+
+Run locally:
+    uvicorn api:app --reload
+
+Endpoints:
+    GET  /health   -> {"status": "ok"}
+    POST /check    -> classify one claim, with optional fact-check lookup
+    GET  /history  -> last 50 stored claims, newest first
+"""
+
+import sqlite3
+from typing import Any, Dict, List, Optional
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+import config
+from classifier import _classify_one, is_falsifiable
+from fact_checker import check_claim
+
+app = FastAPI(title="Checkit Health API", version="1.0.0")
+
+# Open CORS so the Vercel-hosted frontend (any origin) can call the API. Tighten
+# to the deployed frontend origin if this ever handles anything sensitive.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class CheckRequest(BaseModel):
+    text: str
+
+
+class CheckResponse(BaseModel):
+    label: str
+    claim: Optional[str] = None
+    topic: Optional[str] = None
+    confidence: Optional[float] = None
+    falsifiable: Optional[bool] = None
+    fact_check_verdict: Optional[str] = None
+    fact_check_source: Optional[str] = None
+    fact_check_url: Optional[str] = None
+    error: Optional[str] = None
+
+
+def _genai_client() -> Any:
+    from google import genai
+    return genai.Client(api_key=config.GOOGLE_API_KEY)
+
+
+@app.get("/health")
+def health() -> Dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.post("/check", response_model=CheckResponse)
+def check(req: CheckRequest) -> CheckResponse:
+    text = (req.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="text must not be empty")
+    if not config.GOOGLE_API_KEY:
+        raise HTTPException(status_code=503, detail="GOOGLE_API_KEY not configured")
+
+    client = _genai_client()
+    classification = _classify_one(client, text)
+
+    resp = CheckResponse(**classification)
+
+    # Only run the extra passes for real medical claims that clear the gate.
+    is_claim = (
+        classification["label"] == "MEDICAL_CLAIM"
+        and classification.get("confidence") is not None
+        and classification["confidence"] >= config.CONFIDENCE_THRESHOLD
+    )
+    if is_claim:
+        claim_text = classification["claim"] or text
+        resp.falsifiable = is_falsifiable(claim_text, client=client)
+        fc = check_claim(claim_text)
+        if fc:
+            resp.fact_check_verdict = fc.get("verdict")
+            resp.fact_check_source = fc.get("publisher")
+            resp.fact_check_url = fc.get("url")
+    return resp
+
+
+@app.get("/history")
+def history() -> List[Dict[str, Any]]:
+    """Return the most recent 50 stored claims, newest first."""
+    db_path = config.DEFAULT_DB_PATH
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+    except sqlite3.Error:
+        return []
+    try:
+        cur = conn.execute(
+            """
+            SELECT post_id, username, text, timestamp, claim, topic, confidence,
+                   timestamp_processed, status,
+                   fact_check_verdict, fact_check_source, fact_check_url
+            FROM claims
+            ORDER BY timestamp_processed DESC
+            LIMIT 50
+            """
+        )
+        return [dict(row) for row in cur.fetchall()]
+    except sqlite3.OperationalError:
+        # Table doesn't exist yet (pipeline never run).
+        return []
+    finally:
+        conn.close()

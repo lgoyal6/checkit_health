@@ -7,6 +7,8 @@ touching the rest of the pipeline. See README for the data contract.
 
 import csv
 import json
+import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -30,6 +32,57 @@ def get_posts(source: str) -> List[Dict[str, Any]]:
         posts = _load_csv(path)
     else:
         raise ValueError(f"Unsupported input format: {path.suffix}")
+
+    _validate(posts)
+    return posts
+
+
+def get_posts_reddit(subreddit: str, limit: int = 50) -> List[Dict[str, Any]]:
+    """Pull recent posts from a subreddit, mapped to the standard data contract.
+
+    This is a drop-in alternative to `get_posts` — same output shape, different
+    source. Requires PRAW and Reddit API credentials in the environment:
+    REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, and REDDIT_USER_AGENT.
+
+    Post title and body are combined into `text`. Reddit has no retweet concept,
+    so `retweet_count` is filled with `num_comments` as a rough reach proxy and
+    `like_count` with the post score.
+    """
+    import praw  # imported lazily so the file-based flow needs no reddit deps
+
+    client_id = os.environ.get("REDDIT_CLIENT_ID")
+    client_secret = os.environ.get("REDDIT_CLIENT_SECRET")
+    user_agent = os.environ.get("REDDIT_USER_AGENT", "checkit-health/0.1")
+    if not client_id or not client_secret:
+        raise RuntimeError(
+            "Reddit ingestion needs REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET "
+            "environment variables. Create an app at "
+            "https://www.reddit.com/prefs/apps"
+        )
+
+    reddit = praw.Reddit(
+        client_id=client_id,
+        client_secret=client_secret,
+        user_agent=user_agent,
+    )
+
+    posts: List[Dict[str, Any]] = []
+    for submission in reddit.subreddit(subreddit).hot(limit=limit):
+        if submission.stickied:
+            continue
+        body = (submission.title or "").strip()
+        if submission.selftext:
+            body = f"{body}\n\n{submission.selftext.strip()}"
+        posts.append({
+            "id": f"reddit_{submission.id}",
+            "text": body,
+            "timestamp": datetime.fromtimestamp(
+                submission.created_utc, tz=timezone.utc
+            ).isoformat(),
+            "username": str(submission.author) if submission.author else "[deleted]",
+            "retweet_count": int(submission.num_comments),
+            "like_count": int(submission.score),
+        })
 
     _validate(posts)
     return posts
