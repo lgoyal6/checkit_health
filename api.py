@@ -56,6 +56,20 @@ def _genai_client() -> Any:
     return genai.Client(api_key=config.GOOGLE_API_KEY)
 
 
+@app.get("/")
+def root() -> Dict[str, Any]:
+    """Friendly landing payload so the bare URL isn't a bare 404."""
+    return {
+        "service": "Checkit Health API",
+        "docs": "/docs",
+        "endpoints": {
+            "GET /health": "liveness check",
+            "POST /check": 'classify a claim: {"text": "..."}',
+            "GET /history": "last 50 stored claims",
+        },
+    }
+
+
 @app.get("/health")
 def health() -> Dict[str, str]:
     return {"status": "ok"}

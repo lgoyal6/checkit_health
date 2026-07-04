@@ -4,5 +4,7 @@ __pycache__/
 venv/
 .env
 db/*.db
+# committed seed DB so /history has data on deploy
+!db/claims.db
 output/*.json
 !output/.gitkeep
