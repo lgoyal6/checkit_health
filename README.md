@@ -8,8 +8,8 @@ classifier → confidence gate → falsifiability second pass → Google Fact Ch
 lookup → SQLite + JSON. A FastAPI backend exposes the classifier over HTTP and
 a React frontend lets you check claims and browse history in the browser.
 
-**Live demo:** _add your Vercel URL here after deploying (see
-[Deployment](#deployment))._
+**Live demo:** https://checkit-health-s9p4.vercel.app (backend:
+https://checkit-health-api.onrender.com)
 
 There is no X API key wired up yet — the ingestion stage reads a local
 JSON/CSV file. When the key arrives, swap one function (`get_posts`) and
