@@ -15,10 +15,13 @@ function confidenceStyle(label, confidence) {
 }
 
 export default function VerdictCard({ result }) {
-  const { label, claim, topic, confidence } = result;
+  const { label, claim, topic, confidence, reasoning } = result;
   const style = confidenceStyle(label, confidence);
   const pct = confidence != null ? `${Math.round(confidence * 100)}%` : "—";
   const hasFactCheck = Boolean(result.fact_check_verdict);
+  const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(
+    `fact check ${claim || ""}`,
+  )}`;
 
   return (
     <div
@@ -45,6 +48,13 @@ export default function VerdictCard({ result }) {
             {topic}
           </span>
         </div>
+      )}
+
+      {reasoning && (
+        <p className="mt-3 text-sm italic text-slate-600">
+          <span className="font-semibold not-italic text-slate-500">Why:</span>{" "}
+          {reasoning}
+        </p>
       )}
 
       {label === "MEDICAL_CLAIM" && result.falsifiable === false && (
@@ -79,7 +89,17 @@ export default function VerdictCard({ result }) {
           </div>
         ) : (
           <p className="text-sm text-slate-500">
-            No existing fact check found — flagged for review.
+            No existing fact check found — flagged for review.{" "}
+            {label === "MEDICAL_CLAIM" && claim && (
+              <a
+                href={searchUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-blue-600 hover:underline"
+              >
+                Search the web →
+              </a>
+            )}
           </p>
         )}
       </div>

@@ -152,6 +152,7 @@ python run.py --source reddit --subreddit conspiracy --reddit-limit 50
 pip install -r requirements.txt
 export GOOGLE_API_KEY=AIza...
 export GOOGLE_FACT_CHECK_KEY=...   # optional; enables fact-check lookups
+export DATABASE_URL=postgresql://... # optional; Supabase Postgres, else SQLite
 uvicorn api:app --reload           # http://localhost:8000
 ```
 
@@ -183,6 +184,25 @@ and `GOOGLE_FACT_CHECK_KEY` in the dashboard. Render runs
 `frontend/` (a `frontend/vercel.json` configures the Vite build and SPA
 routing). Set `VITE_API_URL` to your live Render URL, then redeploy. Put the
 resulting URL at the top of this README.
+
+**Database → Supabase (Postgres).** SQLite works locally, but Render's disk is
+ephemeral, so production uses a free Supabase Postgres project instead. Set the
+`DATABASE_URL` env var (the Supabase connection string) on the backend and the
+API will read/write there automatically — live web checks are persisted and
+show up in History. Without `DATABASE_URL` the app transparently falls back to
+the local `db/claims.db`. Schema: a single `claims` table (same columns as the
+SQLite one, plus a `source` column tagging `web` / `reddit` / `file`).
+
+### Automation (GitHub Actions)
+
+Two workflows keep the deployed app healthy and growing:
+
+- **`keepwarm.yml`** — pings `/health` every 10 min so Render's free tier
+  doesn't cold-start on the next visitor. No secrets needed.
+- **`ingest.yml`** — daily (and on-demand) run of the Reddit pipeline into
+  Postgres, so History fills up on its own. Needs repo secrets: `GOOGLE_API_KEY`,
+  `DATABASE_URL`, `GOOGLE_FACT_CHECK_KEY`, `REDDIT_CLIENT_ID`,
+  `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`.
 
 ---
 

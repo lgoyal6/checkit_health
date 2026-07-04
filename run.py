@@ -13,7 +13,7 @@ from pathlib import Path
 import config
 from ingestion import get_posts
 from classifier import classify_posts, filter_for_review
-from storage import build_records, write_json, write_sqlite
+from storage import build_records, write_json, write_sqlite, write_postgres, postgres_enabled
 
 
 def parse_args() -> argparse.Namespace:
@@ -56,6 +56,8 @@ def main() -> int:
     else:
         posts = get_posts(args.input)
         source_desc = args.input
+    for p in posts:
+        p.setdefault("source", args.source)
     if args.limit is not None:
         posts = posts[: args.limit]
     ingested = len(posts)
@@ -131,6 +133,10 @@ def main() -> int:
 
     write_json(records, args.output)
     write_sqlite(records, args.db)
+    wrote_postgres = False
+    if postgres_enabled():
+        write_postgres(records)
+        wrote_postgres = True
 
     print("=" * 56)
     print("Checkit Health pipeline summary")
@@ -148,6 +154,8 @@ def main() -> int:
         print(f"  Matched existing fact-check:  {fact_checked_count}")
     print(f"  Wrote JSON:                   {args.output}")
     print(f"  Wrote SQLite:                 {args.db}")
+    if wrote_postgres:
+        print(f"  Wrote Postgres:               {len(records)} rows upserted")
     return 0
 
 

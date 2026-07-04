@@ -1,0 +1,47 @@
+name: Scheduled Reddit ingestion
+
+# Pulls fresh posts from a subreddit, runs the full classify -> falsifiability
+# -> fact-check pipeline, and upserts the results into Postgres (Supabase) so
+# the live /history page grows on its own. Runs daily; also triggerable by hand.
+
+on:
+  schedule:
+    - cron: "0 8 * * *" # 08:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      subreddit:
+        description: Subreddit to scrape
+        required: false
+        default: conspiracy
+      reddit_limit:
+        description: Max posts to pull
+        required: false
+        default: "50"
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pipeline into Postgres
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GOOGLE_FACT_CHECK_KEY: ${{ secrets.GOOGLE_FACT_CHECK_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
+        run: |
+          python run.py \
+            --source reddit \
+            --subreddit "${{ github.event.inputs.subreddit || 'conspiracy' }}" \
+            --reddit-limit "${{ github.event.inputs.reddit_limit || '50' }}"

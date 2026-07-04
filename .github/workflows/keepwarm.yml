@@ -1,0 +1,19 @@
+name: Keep backend warm
+
+# Render's free tier spins the service down after ~15 min idle, which makes the
+# next request cold-start (~50s). Ping /health every 10 minutes to keep it up.
+# (GitHub cron is best-effort and can lag a few minutes — that's fine here.)
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          curl -fsS --max-time 60 --retry 3 --retry-delay 20 \
+            https://checkit-health-api.onrender.com/health

@@ -4,6 +4,11 @@ import os
 
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 
+# Postgres (Supabase) connection string. When set, the pipeline and API read and
+# write claims here instead of the local SQLite file, so live web checks and
+# scheduled ingestion share one durable, deploy-proof store.
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
 MODEL_NAME = "gemini-2.5-flash-lite"
 
 CONFIDENCE_THRESHOLD = 0.7

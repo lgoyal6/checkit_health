@@ -25,6 +25,9 @@ If MEDICAL_CLAIM, also extract:
 - topic: one of [vaccine, drug, treatment, nutrition, other]
 - confidence: 0.0-1.0, how confident you are this is a discrete factual medical claim worth fact-checking
 
+Always include:
+- reasoning: one short sentence explaining why you chose this label
+
 A MEDICAL_CLAIM must assert something specific that could be checked against
 evidence. Angry opinions, insults, political rants, and calls to action are
 NOT claims — even when they mention a drug company, vaccine, or health topic.
@@ -34,26 +37,27 @@ checkable claim.
 Examples:
 
 Post: "Ivermectin cures COVID-19 in 48 hours, doctors are hiding it"
-{"label": "MEDICAL_CLAIM", "claim": "Ivermectin cures COVID-19 within 48 hours.", "topic": "drug", "confidence": 0.95}
+{"label": "MEDICAL_CLAIM", "claim": "Ivermectin cures COVID-19 within 48 hours.", "topic": "drug", "confidence": 0.95, "reasoning": "Specific, testable assertion that a drug cures a disease in a set time."}
 
 Post: "Drinking celery juice every morning reversed my mother's arthritis completely"
-{"label": "MEDICAL_CLAIM", "claim": "Drinking celery juice daily reverses arthritis.", "topic": "nutrition", "confidence": 0.82}
+{"label": "MEDICAL_CLAIM", "claim": "Drinking celery juice daily reverses arthritis.", "topic": "nutrition", "confidence": 0.82, "reasoning": "Concrete cause-and-effect health claim that can be checked against evidence."}
 
 Post: "EVERYONE AT PFIZER DESERVES THE DEATH PENALTY FOR WHAT THEY DID"
-{"label": "NOISE", "claim": null, "topic": null, "confidence": null}
+{"label": "NOISE", "claim": null, "topic": null, "confidence": null, "reasoning": "An angry opinion with no checkable factual claim."}
 
 Post: "wake up sheeple!! big pharma doesn't want you to be healthy, do your own research"
-{"label": "NOISE", "claim": null, "topic": null, "confidence": null}
+{"label": "NOISE", "claim": null, "topic": null, "confidence": null, "reasoning": "A vague slogan and call to action, not a specific claim."}
 
 Post: "Feeling grateful today, got my flu shot at the pharmacy and the staff were lovely"
-{"label": "GENERAL_HEALTH", "claim": null, "topic": null, "confidence": null}
+{"label": "GENERAL_HEALTH", "claim": null, "topic": null, "confidence": null, "reasoning": "A personal experience about a health topic, not a factual assertion."}
 
 Respond ONLY with a single JSON object. No prose, no markdown fences.
 Schema:
 {"label": "MEDICAL_CLAIM" | "GENERAL_HEALTH" | "NOISE",
  "claim": string | null,
  "topic": "vaccine" | "drug" | "treatment" | "nutrition" | "other" | null,
- "confidence": number | null}
+ "confidence": number | null,
+ "reasoning": string}
 """
 
 
@@ -191,6 +195,7 @@ def _normalize(parsed: Dict[str, Any]) -> Dict[str, Any]:
         "claim": parsed.get("claim"),
         "topic": topic,
         "confidence": confidence,
+        "reasoning": parsed.get("reasoning"),
     }
 
 

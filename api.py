@@ -12,17 +12,28 @@ Endpoints:
 """
 
 import sqlite3
+import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 import config
+import storage
 from classifier import _classify_one, is_falsifiable
 from fact_checker import check_claim
 
+# Rate-limit the LLM-backed endpoint so a bot can't burn the Gemini quota.
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(title="Checkit Health API", version="1.0.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Open CORS so the Vercel-hosted frontend (any origin) can call the API. Tighten
 # to the deployed frontend origin if this ever handles anything sensitive.
@@ -44,6 +55,7 @@ class CheckResponse(BaseModel):
     claim: Optional[str] = None
     topic: Optional[str] = None
     confidence: Optional[float] = None
+    reasoning: Optional[str] = None
     falsifiable: Optional[bool] = None
     fact_check_verdict: Optional[str] = None
     fact_check_source: Optional[str] = None
@@ -76,7 +88,8 @@ def health() -> Dict[str, str]:
 
 
 @app.post("/check", response_model=CheckResponse)
-def check(req: CheckRequest) -> CheckResponse:
+@limiter.limit("20/minute")
+def check(request: Request, req: CheckRequest) -> CheckResponse:
     text = (req.text or "").strip()
     if not text:
         raise HTTPException(status_code=422, detail="text must not be empty")
@@ -102,12 +115,55 @@ def check(req: CheckRequest) -> CheckResponse:
             resp.fact_check_verdict = fc.get("verdict")
             resp.fact_check_source = fc.get("publisher")
             resp.fact_check_url = fc.get("url")
+        _persist_check(text, resp)
     return resp
+
+
+def _persist_check(original_text: str, resp: CheckResponse) -> None:
+    """Save a live web check to Postgres so it shows up in /history.
+
+    Best-effort: a storage hiccup must never break the user's check response.
+    No-op when DATABASE_URL isn't configured (e.g. local SQLite-only dev).
+    """
+    if not storage.postgres_enabled():
+        return
+    record = {
+        "post_id": f"web-{uuid.uuid4().hex[:12]}",
+        "username": "web",
+        "text": original_text,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "retweet_count": 0,
+        "like_count": 0,
+        "claim": resp.claim or original_text,
+        "topic": resp.topic,
+        "confidence": resp.confidence,
+        "timestamp_processed": datetime.now(timezone.utc).isoformat(),
+        "status": "verified" if resp.fact_check_verdict else "unverified",
+        "fact_check_verdict": resp.fact_check_verdict,
+        "fact_check_source": resp.fact_check_source,
+        "fact_check_url": resp.fact_check_url,
+        "source": "web",
+    }
+    try:
+        storage.write_postgres([record])
+    except Exception as e:  # pragma: no cover - defensive, logged only
+        print(f"[warn] failed to persist web check: {e}")
 
 
 @app.get("/history")
 def history() -> List[Dict[str, Any]]:
-    """Return the most recent 50 stored claims, newest first."""
+    """Return the most recent 50 stored claims, newest first.
+
+    Reads Postgres when DATABASE_URL is set (the deployed path), otherwise
+    falls back to the local SQLite file for offline dev.
+    """
+    if storage.postgres_enabled():
+        try:
+            return storage.fetch_recent(50)
+        except Exception as e:
+            print(f"[warn] postgres history read failed: {e}")
+            return []
+
     db_path = config.DEFAULT_DB_PATH
     try:
         conn = sqlite3.connect(db_path)
