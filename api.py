@@ -99,6 +99,15 @@ def check(request: Request, req: CheckRequest) -> CheckResponse:
     client = _genai_client()
     classification = _classify_one(client, text)
 
+    # A classifier error (e.g. Gemini briefly overloaded) comes back as a NOISE
+    # fallback with an `error` set. Surface it as a real error so the UI can say
+    # "try again" instead of silently showing a wrong "Not a health claim".
+    if classification.get("error"):
+        raise HTTPException(
+            status_code=503,
+            detail="The AI model is busy right now — please try again in a moment.",
+        )
+
     resp = CheckResponse(**classification)
 
     # Only run the extra passes for real medical claims that clear the gate.
