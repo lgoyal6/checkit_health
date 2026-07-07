@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { checkClaim } from "../api.js";
+import { useEffect, useState } from "react";
+import { checkClaim, warmUp } from "../api.js";
 import VerdictCard from "../components/VerdictCard.jsx";
 
 const EXAMPLES = [
@@ -14,6 +14,17 @@ export default function CheckPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
+
+  // Wake the free-tier backend on load so the first check isn't a cold start.
+  useEffect(() => {
+    warmUp();
+  }, []);
+
+  function clearAll() {
+    setText("");
+    setResult(null);
+    setError("");
+  }
 
   async function runCheck(claimText) {
     if (!claimText.trim() || loading) return;
@@ -57,13 +68,24 @@ export default function CheckPage() {
           placeholder="e.g. Ivermectin cures COVID-19 in 48 hours…"
           className="w-full resize-y rounded-lg border border-slate-300 p-3 text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:bg-slate-100"
         />
-        <button
-          type="submit"
-          disabled={loading || !text.trim()}
-          className="mt-3 rounded-lg bg-slate-900 px-5 py-2.5 font-medium text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-        >
-          {loading ? "Checking…" : "Check it"}
-        </button>
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            type="submit"
+            disabled={loading || !text.trim()}
+            className="rounded-lg bg-slate-900 px-5 py-2.5 font-medium text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            {loading ? "Checking…" : "Check it"}
+          </button>
+          {(text || result || error) && !loading && (
+            <button
+              type="button"
+              onClick={clearAll}
+              className="rounded-lg px-3 py-2.5 text-sm font-medium text-slate-500 hover:text-slate-800"
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </form>
 
       {/* Quick-try examples */}

@@ -1,5 +1,6 @@
 // Renders the classifier verdict plus, when present, an existing fact check.
 // Card accent color reflects confidence: green > 0.8, amber 0.7–0.8, slate below.
+import { truthVerdict } from "../verdict.js";
 
 // Plain-English name + one-line meaning for each machine label, so users don't
 // have to decode MEDICAL_CLAIM / GENERAL_HEALTH / NOISE.
@@ -17,74 +18,6 @@ const LABELS = {
     blurb: "No checkable health claim here (opinion, slogan, or off-topic).",
   },
 };
-
-// Fact-checkers return free-text ratings ("False", "Flawed Paper", a whole
-// sentence…). Boil it down to one prominent verdict so the user instantly sees
-// whether the claim is true — separate from the claim-confidence score.
-function truthVerdict(rating) {
-  const t = (rating || "").toLowerCase();
-  const has = (words) => words.some((w) => t.includes(w));
-  if (
-    has([
-      "false",
-      "untrue",
-      "debunk",
-      "no evidence",
-      "no data",
-      "no link",
-      "no scientific",
-      "incorrect",
-      "myth",
-      "hoax",
-      "fake",
-      "misinformation",
-      "baseless",
-      "unfounded",
-      "not true",
-      "pants on fire",
-    ])
-  ) {
-    return {
-      label: "Likely FALSE",
-      cls: "bg-red-100 text-red-800 ring-red-200",
-      border: "border-red-500",
-    };
-  }
-  if (
-    has([
-      "misleading",
-      "mixture",
-      "partly",
-      "partially",
-      "exaggerat",
-      "needs context",
-      "lacks context",
-      "out of context",
-      "flawed",
-      "unproven",
-      "unverified",
-      "disputed",
-    ])
-  ) {
-    return {
-      label: "Misleading / disputed",
-      cls: "bg-amber-100 text-amber-800 ring-amber-200",
-      border: "border-amber-500",
-    };
-  }
-  if (has(["mostly true", "accurate", "correct", "confirmed", "is true"])) {
-    return {
-      label: "Likely TRUE",
-      cls: "bg-green-100 text-green-800 ring-green-200",
-      border: "border-green-500",
-    };
-  }
-  return {
-    label: "See the fact-check",
-    cls: "bg-slate-100 text-slate-700 ring-slate-200",
-    border: "border-slate-300",
-  };
-}
 
 function confidenceStyle(label, confidence) {
   if (label !== "MEDICAL_CLAIM" || confidence == null) {
@@ -118,7 +51,7 @@ export default function VerdictCard({ result }) {
     <div
       className={`rounded-xl border-l-4 ${accentBorder} bg-white p-5 shadow-sm`}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
         <div>
           <span
             className={`rounded-full px-3 py-1 text-xs font-semibold ${style.chip}`}
@@ -131,7 +64,7 @@ export default function VerdictCard({ result }) {
         </div>
         {pct && (
           <div
-            className="whitespace-nowrap text-right"
+            className="whitespace-nowrap sm:text-right"
             title="How sure the AI is that this is a checkable claim — NOT whether the claim is true."
           >
             <div className="text-sm text-slate-500">

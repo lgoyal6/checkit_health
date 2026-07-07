@@ -36,6 +36,12 @@ export async function checkClaim(text) {
   return res.json();
 }
 
+// Fire-and-forget wake-up so the free-tier backend is warm by the time the
+// user submits (avoids a cold-start wait on the first real request).
+export function warmUp() {
+  fetch(`${API_URL}/health`).catch(() => {});
+}
+
 export async function getHistory() {
   const res = await fetch(`${API_URL}/history`);
   if (!res.ok) throw new Error(`Failed to load history (${res.status})`);

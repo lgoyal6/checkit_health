@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { getHistory } from "../api.js";
+import { truthVerdict } from "../verdict.js";
 
 function formatDate(iso) {
   if (!iso) return "—";
@@ -108,17 +109,17 @@ export default function HistoryPage() {
                           : "—"}
                       </td>
                       <td className="px-4 py-3">
-                        <span
-                          className={
-                            r.status === "verified"
-                              ? "rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800"
-                              : "rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
-                          }
-                        >
-                          {r.status === "verified"
-                            ? "Fact-checked"
-                            : "Needs review"}
-                        </span>
+                        {r.fact_check_verdict ? (
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${truthVerdict(r.fact_check_verdict).cls}`}
+                          >
+                            {truthVerdict(r.fact_check_verdict).label}
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                            Needs review
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-slate-500">
                         {formatDate(r.timestamp_processed)}
