@@ -11,8 +11,8 @@ Endpoints:
     GET  /history  -> last 50 stored claims, newest first
 """
 
+import hashlib
 import sqlite3
-import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -138,8 +138,12 @@ def _persist_check(original_text: str, resp: CheckResponse) -> None:
     """
     if not storage.postgres_enabled():
         return
+    # Deterministic id from the claim so re-checking the same thing upserts one
+    # row instead of piling up duplicates in History.
+    claim_text = resp.claim or original_text
+    claim_key = hashlib.sha1(claim_text.strip().lower().encode()).hexdigest()[:16]
     record = {
-        "post_id": f"web-{uuid.uuid4().hex[:12]}",
+        "post_id": f"web-{claim_key}",
         "username": "web",
         "text": original_text,
         "timestamp": datetime.now(timezone.utc).isoformat(),

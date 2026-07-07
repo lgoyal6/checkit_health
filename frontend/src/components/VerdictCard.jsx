@@ -47,6 +47,7 @@ function truthVerdict(rating) {
     return {
       label: "Likely FALSE",
       cls: "bg-red-100 text-red-800 ring-red-200",
+      border: "border-red-500",
     };
   }
   if (
@@ -68,17 +69,20 @@ function truthVerdict(rating) {
     return {
       label: "Misleading / disputed",
       cls: "bg-amber-100 text-amber-800 ring-amber-200",
+      border: "border-amber-500",
     };
   }
   if (has(["mostly true", "accurate", "correct", "confirmed", "is true"])) {
     return {
       label: "Likely TRUE",
       cls: "bg-green-100 text-green-800 ring-green-200",
+      border: "border-green-500",
     };
   }
   return {
     label: "See the fact-check",
     cls: "bg-slate-100 text-slate-700 ring-slate-200",
+    border: "border-slate-300",
   };
 }
 
@@ -101,13 +105,18 @@ export default function VerdictCard({ result }) {
   const meta = LABELS[label] || { name: label, blurb: "" };
   const pct = confidence != null ? `${Math.round(confidence * 100)}%` : null;
   const hasFactCheck = Boolean(result.fact_check_verdict);
+  const verdict = hasFactCheck ? truthVerdict(result.fact_check_verdict) : null;
+  // When a fact-check exists, the card accent should reflect the TRUTH (red for
+  // false), not the claim-detection confidence — a green bar next to a false
+  // claim is misleading.
+  const accentBorder = verdict ? verdict.border : style.border;
   const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(
     `fact check ${claim || ""}`,
   )}`;
 
   return (
     <div
-      className={`rounded-xl border-l-4 ${style.border} bg-white p-5 shadow-sm`}
+      className={`rounded-xl border-l-4 ${accentBorder} bg-white p-5 shadow-sm`}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -181,9 +190,9 @@ export default function VerdictCard({ result }) {
           {hasFactCheck ? (
             <div className="mt-2">
               <span
-                className={`inline-block rounded-md px-3 py-1 text-sm font-bold uppercase tracking-wide ring-1 ${truthVerdict(result.fact_check_verdict).cls}`}
+                className={`inline-block rounded-md px-3 py-1 text-sm font-bold uppercase tracking-wide ring-1 ${verdict.cls}`}
               >
-                {truthVerdict(result.fact_check_verdict).label}
+                {verdict.label}
               </span>
               <p className="mt-2 text-sm text-slate-800">
                 <span className="font-semibold">
@@ -201,6 +210,10 @@ export default function VerdictCard({ result }) {
                   Read the full fact check →
                 </a>
               )}
+              <p className="mt-2 text-xs text-slate-400">
+                This is the closest published fact-check we found — open it to
+                confirm it matches your exact claim.
+              </p>
             </div>
           ) : (
             <div className="mt-1">
