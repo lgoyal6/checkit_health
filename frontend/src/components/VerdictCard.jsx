@@ -57,10 +57,18 @@ export default function VerdictCard({ result }) {
           )}
         </div>
         {pct && (
-          <span className="whitespace-nowrap text-sm text-slate-500">
-            Confidence{" "}
-            <span className="font-semibold text-slate-800">{pct}</span>
-          </span>
+          <div
+            className="whitespace-nowrap text-right"
+            title="How sure the AI is that this is a checkable claim — NOT whether the claim is true."
+          >
+            <div className="text-sm text-slate-500">
+              Claim confidence{" "}
+              <span className="font-semibold text-slate-800">{pct}</span>
+            </div>
+            <div className="text-xs text-slate-400">
+              is this a claim — not if it&apos;s true
+            </div>
+          </div>
         )}
       </div>
 
@@ -89,15 +97,16 @@ export default function VerdictCard({ result }) {
         </p>
       )}
 
-      {/* Fact-check block — only meaningful for real claims */}
+      {/* Fact-check block — this is the "is it TRUE?" answer, separate from the
+          claim-confidence score above. */}
       {label === "MEDICAL_CLAIM" && (
         <div className="mt-4 border-t border-slate-100 pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Is it true? — what fact-checkers say
+          </p>
           {hasFactCheck ? (
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Existing fact check found
-              </p>
-              <p className="mt-1 text-sm text-slate-800">
+            <div className="mt-1">
+              <p className="text-sm text-slate-800">
                 <span className="font-semibold">
                   {result.fact_check_source || "Unknown publisher"}:
                 </span>{" "}
@@ -115,10 +124,11 @@ export default function VerdictCard({ result }) {
               )}
             </div>
           ) : (
-            <div>
+            <div className="mt-1">
               <p className="text-sm text-slate-600">
                 No published fact-check exists for this yet, so it&apos;s{" "}
-                <span className="font-medium">flagged for review.</span>
+                <span className="font-medium">flagged for review.</span> That
+                doesn&apos;t mean it&apos;s true or false — just unchecked.
               </p>
               {claim && (
                 <a
