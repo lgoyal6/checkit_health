@@ -1,6 +1,23 @@
 // Renders the classifier verdict plus, when present, an existing fact check.
 // Card accent color reflects confidence: green > 0.8, amber 0.7–0.8, slate below.
 
+// Plain-English name + one-line meaning for each machine label, so users don't
+// have to decode MEDICAL_CLAIM / GENERAL_HEALTH / NOISE.
+const LABELS = {
+  MEDICAL_CLAIM: {
+    name: "Medical claim",
+    blurb: "A specific, checkable claim — worth fact-checking.",
+  },
+  GENERAL_HEALTH: {
+    name: "General health",
+    blurb: "Health-related, but too vague or generally-true to fact-check.",
+  },
+  NOISE: {
+    name: "Not a health claim",
+    blurb: "No checkable health claim here (opinion, slogan, or off-topic).",
+  },
+};
+
 function confidenceStyle(label, confidence) {
   if (label !== "MEDICAL_CLAIM" || confidence == null) {
     return { border: "border-slate-300", chip: "bg-slate-200 text-slate-700" };
@@ -17,7 +34,8 @@ function confidenceStyle(label, confidence) {
 export default function VerdictCard({ result }) {
   const { label, claim, topic, confidence, reasoning } = result;
   const style = confidenceStyle(label, confidence);
-  const pct = confidence != null ? `${Math.round(confidence * 100)}%` : "—";
+  const meta = LABELS[label] || { name: label, blurb: "" };
+  const pct = confidence != null ? `${Math.round(confidence * 100)}%` : null;
   const hasFactCheck = Boolean(result.fact_check_verdict);
   const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(
     `fact check ${claim || ""}`,
@@ -27,15 +45,23 @@ export default function VerdictCard({ result }) {
     <div
       className={`rounded-xl border-l-4 ${style.border} bg-white p-5 shadow-sm`}
     >
-      <div className="flex items-center justify-between">
-        <span
-          className={`rounded-full px-3 py-1 text-xs font-semibold ${style.chip}`}
-        >
-          {label}
-        </span>
-        <span className="text-sm text-slate-500">
-          Confidence <span className="font-semibold text-slate-800">{pct}</span>
-        </span>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${style.chip}`}
+          >
+            {meta.name}
+          </span>
+          {meta.blurb && (
+            <p className="mt-2 text-sm text-slate-500">{meta.blurb}</p>
+          )}
+        </div>
+        {pct && (
+          <span className="whitespace-nowrap text-sm text-slate-500">
+            Confidence{" "}
+            <span className="font-semibold text-slate-800">{pct}</span>
+          </span>
+        )}
       </div>
 
       {claim && (
@@ -63,46 +89,51 @@ export default function VerdictCard({ result }) {
         </p>
       )}
 
-      {/* Fact-check block — issue #9 */}
-      <div className="mt-4 border-t border-slate-100 pt-4">
-        {hasFactCheck ? (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Existing fact check
-            </p>
-            <p className="mt-1 text-sm text-slate-800">
-              <span className="font-semibold">
-                {result.fact_check_source || "Unknown publisher"}:
-              </span>{" "}
-              {result.fact_check_verdict}
-            </p>
-            {result.fact_check_url && (
-              <a
-                href={result.fact_check_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-1 inline-block text-sm font-medium text-blue-600 hover:underline"
-              >
-                Read the full fact check →
-              </a>
-            )}
-          </div>
-        ) : (
-          <p className="text-sm text-slate-500">
-            No existing fact check found — flagged for review.{" "}
-            {label === "MEDICAL_CLAIM" && claim && (
-              <a
-                href={searchUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium text-blue-600 hover:underline"
-              >
-                Search the web →
-              </a>
-            )}
-          </p>
-        )}
-      </div>
+      {/* Fact-check block — only meaningful for real claims */}
+      {label === "MEDICAL_CLAIM" && (
+        <div className="mt-4 border-t border-slate-100 pt-4">
+          {hasFactCheck ? (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Existing fact check found
+              </p>
+              <p className="mt-1 text-sm text-slate-800">
+                <span className="font-semibold">
+                  {result.fact_check_source || "Unknown publisher"}:
+                </span>{" "}
+                {result.fact_check_verdict}
+              </p>
+              {result.fact_check_url && (
+                <a
+                  href={result.fact_check_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-block text-sm font-medium text-blue-600 hover:underline"
+                >
+                  Read the full fact check →
+                </a>
+              )}
+            </div>
+          ) : (
+            <div>
+              <p className="text-sm text-slate-600">
+                No published fact-check exists for this yet, so it&apos;s{" "}
+                <span className="font-medium">flagged for review.</span>
+              </p>
+              {claim && (
+                <a
+                  href={searchUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-block text-sm font-medium text-blue-600 hover:underline"
+                >
+                  Search the web for this claim →
+                </a>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

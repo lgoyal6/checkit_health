@@ -41,25 +41,38 @@ export default function HistoryPage() {
       </div>
     );
 
+  const emptyMessage =
+    filter === "verified"
+      ? "No claims have a matching published fact-check yet. Most flagged claims are too new or niche for fact-checkers to have covered."
+      : filter === "unverified"
+        ? "Nothing here — every stored claim already has a matching fact-check."
+        : "No claims stored yet. Check a claim on the Check page and it'll appear here.";
+
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Claim history</h1>
         <select
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           className="rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:outline-none"
         >
-          <option value="all">All verdicts</option>
-          <option value="verified">Verified</option>
-          <option value="unverified">Unverified</option>
+          <option value="all">All claims</option>
+          <option value="verified">Fact-checked</option>
+          <option value="unverified">Needs review</option>
         </select>
       </div>
 
+      <p className="mt-2 text-sm text-slate-500">
+        Every medical claim checked here is saved.{" "}
+        <span className="font-medium text-slate-600">Fact-checked</span> means a
+        published fact-check was found;{" "}
+        <span className="font-medium text-slate-600">needs review</span> means
+        none exists yet.
+      </p>
+
       {visible.length === 0 ? (
-        <p className="mt-6 text-slate-500">
-          No claims stored yet. Run the pipeline to populate the database.
-        </p>
+        <p className="mt-6 text-slate-500">{emptyMessage}</p>
       ) : (
         <div className="mt-6 overflow-hidden rounded-lg border border-slate-200 bg-white">
           <table className="w-full text-left text-sm">
@@ -68,7 +81,7 @@ export default function HistoryPage() {
                 <th className="px-4 py-3">Claim</th>
                 <th className="px-4 py-3">Topic</th>
                 <th className="px-4 py-3">Confidence</th>
-                <th className="px-4 py-3">Verdict</th>
+                <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Date</th>
               </tr>
             </thead>
@@ -99,10 +112,12 @@ export default function HistoryPage() {
                           className={
                             r.status === "verified"
                               ? "rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800"
-                              : "rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700"
+                              : "rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
                           }
                         >
-                          {r.status}
+                          {r.status === "verified"
+                            ? "Fact-checked"
+                            : "Needs review"}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-slate-500">
