@@ -18,6 +18,70 @@ const LABELS = {
   },
 };
 
+// Fact-checkers return free-text ratings ("False", "Flawed Paper", a whole
+// sentence…). Boil it down to one prominent verdict so the user instantly sees
+// whether the claim is true — separate from the claim-confidence score.
+function truthVerdict(rating) {
+  const t = (rating || "").toLowerCase();
+  const has = (words) => words.some((w) => t.includes(w));
+  if (
+    has([
+      "false",
+      "untrue",
+      "debunk",
+      "no evidence",
+      "no data",
+      "no link",
+      "no scientific",
+      "incorrect",
+      "myth",
+      "hoax",
+      "fake",
+      "misinformation",
+      "baseless",
+      "unfounded",
+      "not true",
+      "pants on fire",
+    ])
+  ) {
+    return {
+      label: "Likely FALSE",
+      cls: "bg-red-100 text-red-800 ring-red-200",
+    };
+  }
+  if (
+    has([
+      "misleading",
+      "mixture",
+      "partly",
+      "partially",
+      "exaggerat",
+      "needs context",
+      "lacks context",
+      "out of context",
+      "flawed",
+      "unproven",
+      "unverified",
+      "disputed",
+    ])
+  ) {
+    return {
+      label: "Misleading / disputed",
+      cls: "bg-amber-100 text-amber-800 ring-amber-200",
+    };
+  }
+  if (has(["mostly true", "accurate", "correct", "confirmed", "is true"])) {
+    return {
+      label: "Likely TRUE",
+      cls: "bg-green-100 text-green-800 ring-green-200",
+    };
+  }
+  return {
+    label: "See the fact-check",
+    cls: "bg-slate-100 text-slate-700 ring-slate-200",
+  };
+}
+
 function confidenceStyle(label, confidence) {
   if (label !== "MEDICAL_CLAIM" || confidence == null) {
     return { border: "border-slate-300", chip: "bg-slate-200 text-slate-700" };
@@ -97,6 +161,16 @@ export default function VerdictCard({ result }) {
         </p>
       )}
 
+      {/* Nudge vague/general statements toward a checkable claim, without
+          blocking — the classifier already routed it here. */}
+      {label === "GENERAL_HEALTH" && (
+        <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-slate-700">
+          <span className="font-semibold">Want a fact-check?</span> Make it a
+          specific claim. Instead of “COVID is dangerous,” try “COVID-19 is
+          deadlier than the flu” — something that could be proven true or false.
+        </div>
+      )}
+
       {/* Fact-check block — this is the "is it TRUE?" answer, separate from the
           claim-confidence score above. */}
       {label === "MEDICAL_CLAIM" && (
@@ -105,8 +179,13 @@ export default function VerdictCard({ result }) {
             Is it true? — what fact-checkers say
           </p>
           {hasFactCheck ? (
-            <div className="mt-1">
-              <p className="text-sm text-slate-800">
+            <div className="mt-2">
+              <span
+                className={`inline-block rounded-md px-3 py-1 text-sm font-bold uppercase tracking-wide ring-1 ${truthVerdict(result.fact_check_verdict).cls}`}
+              >
+                {truthVerdict(result.fact_check_verdict).label}
+              </span>
+              <p className="mt-2 text-sm text-slate-800">
                 <span className="font-semibold">
                   {result.fact_check_source || "Unknown publisher"}:
                 </span>{" "}

@@ -125,11 +125,23 @@ def _atomic_write_json(data: List[Dict[str, Any]], path: str) -> None:
     tmp.replace(p)
 
 
-def _classify_one(client: Any, text: str) -> Dict[str, Any]:
+def _classify_one(
+    client: Any,
+    text: str,
+    max_attempts: Optional[int] = None,
+    initial_backoff: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Classify one post. Retries on rate-limit with exponential backoff.
+
+    The batch pipeline uses the long defaults (from config) to ride out quota
+    limits. The interactive API passes small values so a throttled request
+    fails in a few seconds instead of hanging on the user for minutes.
+    """
     from google.genai import types
-    backoff = config.RETRY_INITIAL_BACKOFF_SECONDS
+    max_attempts = max_attempts or config.RETRY_MAX_ATTEMPTS
+    backoff = initial_backoff or config.RETRY_INITIAL_BACKOFF_SECONDS
     last_err: Optional[str] = None
-    for attempt in range(config.RETRY_MAX_ATTEMPTS):
+    for attempt in range(max_attempts):
         try:
             response = client.models.generate_content(
                 model=config.MODEL_NAME,
@@ -146,8 +158,8 @@ def _classify_one(client: Any, text: str) -> Dict[str, Any]:
         except Exception as e:
             last_err = str(e)
             is_rate_limit = "429" in last_err or "RESOURCE_EXHAUSTED" in last_err
-            if is_rate_limit and attempt < config.RETRY_MAX_ATTEMPTS - 1:
-                print(f"  [rate-limited, sleeping {backoff}s then retry {attempt + 2}/{config.RETRY_MAX_ATTEMPTS}]")
+            if is_rate_limit and attempt < max_attempts - 1:
+                print(f"  [rate-limited, sleeping {backoff}s then retry {attempt + 2}/{max_attempts}]")
                 time.sleep(backoff)
                 backoff *= 2
                 continue

@@ -97,7 +97,9 @@ def check(request: Request, req: CheckRequest) -> CheckResponse:
         raise HTTPException(status_code=503, detail="GOOGLE_API_KEY not configured")
 
     client = _genai_client()
-    classification = _classify_one(client, text)
+    # Interactive request: fail fast (at most 2 tries, 2s backoff) so a throttled
+    # Gemini returns a quick "try again" instead of hanging on the user.
+    classification = _classify_one(client, text, max_attempts=2, initial_backoff=2)
 
     # A classifier error (e.g. Gemini briefly overloaded) comes back as a NOISE
     # fallback with an `error` set. Surface it as a real error so the UI can say
