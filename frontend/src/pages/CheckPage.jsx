@@ -52,7 +52,7 @@ export default function CheckPage() {
   }
 
   return (
-    <div>
+    <div className="max-w-3xl">
       <h1 className="text-2xl font-bold">Check a health claim</h1>
       <p className="mt-1 text-slate-600">
         Paste a social-media post or statement about health, and our AI will

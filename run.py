@@ -30,12 +30,16 @@ def parse_args() -> argparse.Namespace:
                    help="Only process the first N posts (smoke-test the pipeline cheaply)")
     p.add_argument("--debug", action="store_true",
                    help="Print every classification and dump raw results to output/debug.json")
-    p.add_argument("--source", choices=["file", "reddit"], default="file",
+    p.add_argument("--source", choices=["file", "reddit", "bluesky"], default="file",
                    help="Where to pull posts from (default: file via --input)")
+    p.add_argument("--query", default=None,
+                   help="Search query when --source bluesky. If omitted, MONITOR_QUERIES are used.")
     p.add_argument("--subreddit", default=None,
                    help="Subreddit to scrape when --source reddit (e.g. conspiracy)")
     p.add_argument("--reddit-limit", type=int, default=50,
                    help="Max posts to pull when --source reddit")
+    p.add_argument("--bluesky-limit", type=int, default=50,
+                   help="Max posts to pull per Bluesky query")
     p.add_argument("--skip-prefilter", action="store_true",
                    help="Bypass the keyword pre-filter and send every post to the classifier")
     p.add_argument("--skip-fact-check", action="store_true",
@@ -53,11 +57,28 @@ def main() -> int:
         from ingestion import get_posts_reddit
         posts = get_posts_reddit(args.subreddit, args.reddit_limit)
         source_desc = f"r/{args.subreddit}"
+    elif args.source == "bluesky":
+        from ingestion import get_posts_bluesky
+        queries = [args.query] if args.query else config.MONITOR_QUERIES
+        seen = set()
+        posts = []
+        for query in queries:
+            for post in get_posts_bluesky(query, limit=args.bluesky_limit, sort="top"):
+                post_id = post["id"]
+                if post_id in seen:
+                    continue
+                seen.add(post_id)
+                posts.append(post)
+        source_desc = args.query or ", ".join(queries)
     else:
         posts = get_posts(args.input)
         source_desc = args.input
     for p in posts:
         p.setdefault("source", args.source)
+    posts.sort(
+        key=lambda p: int(p.get("like_count") or 0) + int(p.get("retweet_count") or 0),
+        reverse=True,
+    )
     if args.limit is not None:
         posts = posts[: args.limit]
     ingested = len(posts)

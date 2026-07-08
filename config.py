@@ -9,6 +9,21 @@ GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 # scheduled ingestion share one durable, deploy-proof store.
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
+# Bluesky monitoring source. Create an app password in Bluesky settings and set
+# these in the scheduler/backend environment.
+BLUESKY_IDENTIFIER = os.environ.get("BLUESKY_IDENTIFIER")
+BLUESKY_APP_PASSWORD = os.environ.get("BLUESKY_APP_PASSWORD")
+MONITOR_QUERIES = [
+    "vaccine",
+    "ivermectin",
+    "fluoride",
+    "mRNA",
+    "covid cure",
+    "big pharma",
+    "detox",
+    "raw milk",
+]
+
 MODEL_NAME = "gemini-2.5-flash-lite"
 
 CONFIDENCE_THRESHOLD = 0.7

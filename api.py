@@ -9,6 +9,8 @@ Endpoints:
     GET  /health   -> {"status": "ok"}
     POST /check    -> classify one claim, with optional fact-check lookup
     GET  /history  -> last 50 stored claims, newest first
+    GET  /monitor  -> viral monitored claims ranked by reach
+    GET  /stats    -> aggregate monitor KPIs
 """
 
 import hashlib
@@ -31,7 +33,7 @@ from fact_checker import check_claim
 # Rate-limit the LLM-backed endpoint so a bot can't burn the Gemini quota.
 limiter = Limiter(key_func=get_remote_address)
 
-app = FastAPI(title="Checkit Health API", version="1.0.0")
+app = FastAPI(title="Checkit Health Monitor API", version="1.0.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -78,6 +80,8 @@ def root() -> Dict[str, Any]:
             "GET /health": "liveness check",
             "POST /check": 'classify a claim: {"text": "..."}',
             "GET /history": "last 50 stored claims",
+            "GET /monitor": "viral monitored claims ranked by reach",
+            "GET /stats": "monitor KPI aggregates",
         },
     }
 
@@ -158,6 +162,7 @@ def _persist_check(original_text: str, resp: CheckResponse) -> None:
         "fact_check_source": resp.fact_check_source,
         "fact_check_url": resp.fact_check_url,
         "source": "web",
+        "classification_reasoning": resp.reasoning,
     }
     try:
         storage.write_postgres([record])
@@ -202,3 +207,45 @@ def history() -> List[Dict[str, Any]]:
         return []
     finally:
         conn.close()
+
+
+@app.get("/monitor")
+def monitor(
+    window: str = "7d",
+    topic: Optional[str] = None,
+    source: Optional[str] = None,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """Return monitored social claims ranked by reach.
+
+    This is Postgres-only by design; manual web checks and local SQLite dev data
+    are excluded from the monitor surface.
+    """
+    if not storage.postgres_enabled():
+        return []
+    try:
+        return storage.fetch_trending(
+            window=window,
+            topic=topic or None,
+            source=source or None,
+            limit=max(1, min(limit, 200)),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except Exception as e:
+        print(f"[warn] postgres monitor read failed: {e}")
+        return []
+
+
+@app.get("/stats")
+def stats(window: str = "7d") -> Dict[str, Any]:
+    """Return aggregate KPIs for the monitoring dashboard."""
+    if not storage.postgres_enabled():
+        return {}
+    try:
+        return storage.fetch_stats(window)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except Exception as e:
+        print(f"[warn] postgres stats read failed: {e}")
+        return {}

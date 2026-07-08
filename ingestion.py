@@ -88,6 +88,57 @@ def get_posts_reddit(subreddit: str, limit: int = 50) -> List[Dict[str, Any]]:
     return posts
 
 
+def get_posts_bluesky(query: str, limit: int = 50, sort: str = "top") -> List[Dict[str, Any]]:
+    """Search Bluesky posts and map them to the standard data contract.
+
+    Requires BLUESKY_IDENTIFIER and BLUESKY_APP_PASSWORD in the environment.
+    Uses the public XRPC API directly so this does not need a Bluesky SDK.
+    """
+    import requests  # imported lazily so file-based runs need no network deps
+
+    identifier = os.environ.get("BLUESKY_IDENTIFIER")
+    app_password = os.environ.get("BLUESKY_APP_PASSWORD")
+    if not identifier or not app_password:
+        raise RuntimeError(
+            "Bluesky ingestion needs BLUESKY_IDENTIFIER and BLUESKY_APP_PASSWORD "
+            "environment variables. Create an app password in Bluesky settings."
+        )
+
+    session_resp = requests.post(
+        "https://bsky.social/xrpc/com.atproto.server.createSession",
+        json={"identifier": identifier, "password": app_password},
+        timeout=20,
+    )
+    session_resp.raise_for_status()
+    access_jwt = session_resp.json().get("accessJwt")
+    if not access_jwt:
+        raise RuntimeError("Bluesky session response did not include accessJwt")
+
+    search_resp = requests.get(
+        "https://bsky.social/xrpc/app.bsky.feed.searchPosts",
+        params={"q": query, "sort": sort, "limit": limit},
+        headers={"Authorization": f"Bearer {access_jwt}"},
+        timeout=30,
+    )
+    search_resp.raise_for_status()
+
+    posts: List[Dict[str, Any]] = []
+    for item in search_resp.json().get("posts", []):
+        record = item.get("record") or {}
+        author = item.get("author") or {}
+        posts.append({
+            "id": item.get("uri") or item.get("cid"),
+            "text": record.get("text") or "",
+            "timestamp": record.get("createdAt") or "",
+            "username": author.get("handle") or "",
+            "retweet_count": int(item.get("repostCount") or 0),
+            "like_count": int(item.get("likeCount") or 0),
+        })
+
+    _validate(posts)
+    return posts
+
+
 def _load_json(path: Path) -> List[Dict[str, Any]]:
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)

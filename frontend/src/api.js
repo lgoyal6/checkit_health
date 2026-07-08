@@ -47,3 +47,19 @@ export async function getHistory() {
   if (!res.ok) throw new Error(`Failed to load history (${res.status})`);
   return res.json();
 }
+
+export async function getTrending({ window = "7d", topic = "", source = "", limit = 50 } = {}) {
+  const params = new URLSearchParams({ window, limit: String(limit) });
+  if (topic) params.set("topic", topic);
+  if (source) params.set("source", source);
+  const res = await fetch(`${API_URL}/monitor?${params.toString()}`);
+  if (!res.ok) throw new Error(`Failed to load monitor (${res.status})`);
+  return res.json();
+}
+
+export async function getStats(window = "7d") {
+  const params = new URLSearchParams({ window });
+  const res = await fetch(`${API_URL}/stats?${params.toString()}`);
+  if (!res.ok) throw new Error(`Failed to load stats (${res.status})`);
+  return res.json();
+}
