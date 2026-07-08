@@ -297,7 +297,7 @@ def fetch_stats(window: str) -> Dict[str, Any]:
     with psycopg.connect(config.DATABASE_URL, row_factory=dict_row) as conn:
         _ensure_postgres_schema(conn)
         with conn.cursor() as cur:
-            cur.execute(sql_totals, [*params, *likely_false_terms])
+            cur.execute(sql_totals, [*likely_false_terms, *params])
             totals = dict(cur.fetchone() or {})
             cur.execute(sql_group.format(group_col="topic"), params)
             by_topic = cur.fetchall()
