@@ -95,6 +95,27 @@ def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/health/db")
+def health_db() -> Dict[str, Any]:
+    """Non-secret Postgres health check for deployment debugging."""
+    if not storage.postgres_enabled():
+        return {"postgres_configured": False, "ok": False}
+    try:
+        import psycopg
+        with psycopg.connect(config.DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM claims")
+                count = cur.fetchone()[0]
+        return {"postgres_configured": True, "ok": True, "claims_count": count}
+    except Exception as e:
+        return {
+            "postgres_configured": True,
+            "ok": False,
+            "error": type(e).__name__,
+            "detail": str(e)[:300],
+        }
+
+
 @app.post("/check", response_model=CheckResponse)
 @limiter.limit("20/minute")
 def check(request: Request, req: CheckRequest) -> CheckResponse:
