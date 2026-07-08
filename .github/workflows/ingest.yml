@@ -41,6 +41,8 @@ jobs:
           BLUESKY_IDENTIFIER: ${{ secrets.BLUESKY_IDENTIFIER }}
           BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
           PYTHONUNBUFFERED: "1"
+          RETRY_MAX_ATTEMPTS: "2"
+          RETRY_INITIAL_BACKOFF_SECONDS: "10"
         run: |
           if [ -n "${{ github.event.inputs.query }}" ]; then
             python -u run.py \
