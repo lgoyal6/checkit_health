@@ -21,6 +21,7 @@ on:
 jobs:
   ingest:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -39,14 +40,15 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           BLUESKY_IDENTIFIER: ${{ secrets.BLUESKY_IDENTIFIER }}
           BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
+          PYTHONUNBUFFERED: "1"
         run: |
           if [ -n "${{ github.event.inputs.query }}" ]; then
-            python run.py \
+            python -u run.py \
               --source bluesky \
               --query "${{ github.event.inputs.query }}" \
               --limit "${{ github.event.inputs.limit || '50' }}"
           else
-            python run.py \
+            python -u run.py \
               --source bluesky \
               --limit "${{ github.event.inputs.limit || '50' }}"
           fi

@@ -86,7 +86,11 @@ def classify_posts(
     """
     if client is None:
         from google import genai
-        client = genai.Client(api_key=config.GOOGLE_API_KEY)
+        from google.genai import types
+        client = genai.Client(
+            api_key=config.GOOGLE_API_KEY,
+            http_options=types.HttpOptions(timeout=config.GEMINI_TIMEOUT_MS),
+        )
 
     done: Dict[str, Dict[str, Any]] = {}
     if checkpoint_path and Path(checkpoint_path).exists():
@@ -159,7 +163,10 @@ def _classify_one(
             last_err = str(e)
             is_rate_limit = "429" in last_err or "RESOURCE_EXHAUSTED" in last_err
             if is_rate_limit and attempt < max_attempts - 1:
-                print(f"  [rate-limited, sleeping {backoff}s then retry {attempt + 2}/{max_attempts}]")
+                print(
+                    f"  [rate-limited, sleeping {backoff}s then retry {attempt + 2}/{max_attempts}]",
+                    flush=True,
+                )
                 time.sleep(backoff)
                 backoff *= 2
                 continue
@@ -222,7 +229,11 @@ def is_falsifiable(claim: str, client: Optional[Any] = None) -> bool:
         return False
     if client is None:
         from google import genai
-        client = genai.Client(api_key=config.GOOGLE_API_KEY)
+        from google.genai import types
+        client = genai.Client(
+            api_key=config.GOOGLE_API_KEY,
+            http_options=types.HttpOptions(timeout=config.GEMINI_TIMEOUT_MS),
+        )
 
     from google.genai import types
     try:

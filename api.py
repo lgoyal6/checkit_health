@@ -67,7 +67,11 @@ class CheckResponse(BaseModel):
 
 def _genai_client() -> Any:
     from google import genai
-    return genai.Client(api_key=config.GOOGLE_API_KEY)
+    from google.genai import types
+    return genai.Client(
+        api_key=config.GOOGLE_API_KEY,
+        http_options=types.HttpOptions(timeout=config.GEMINI_TIMEOUT_MS),
+    )
 
 
 @app.get("/")

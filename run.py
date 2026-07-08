@@ -109,7 +109,7 @@ def main() -> int:
         conf = f"{c['confidence']:.2f}" if c['confidence'] is not None else "n/a"
         tag = "[resumed]" if skipped else "         "
         snippet = row["text"][:60].replace("\n", " ")
-        print(f"  {tag} [{i}/{total}] [{c['label']:<15}] conf={conf}  {snippet!r}")
+        print(f"  {tag} [{i}/{total}] [{c['label']:<15}] conf={conf}  {snippet!r}", flush=True)
 
     print(f"Classifying {len(posts)} posts (checkpoint: {checkpoint_path})")
     classified = classify_posts(posts, checkpoint_path=checkpoint_path, on_progress=progress)
