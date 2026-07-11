@@ -34,6 +34,9 @@ RETRY_MAX_ATTEMPTS = int(os.environ.get("RETRY_MAX_ATTEMPTS", "5"))
 RETRY_INITIAL_BACKOFF_SECONDS = int(os.environ.get("RETRY_INITIAL_BACKOFF_SECONDS", "10"))
 
 MAX_TOKENS = 512
+# Evidence reports (Rumor/Summary/Key Facts/Analysis/Conclusion) run longer
+# than triage classification, so they get their own, higher token cap.
+REPORT_MAX_TOKENS = int(os.environ.get("REPORT_MAX_TOKENS", "768"))
 GEMINI_TIMEOUT_MS = int(os.environ.get("GEMINI_TIMEOUT_MS", "60000"))
 
 DEFAULT_INPUT_PATH = "data/posts.json"

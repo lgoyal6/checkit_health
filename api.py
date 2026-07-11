@@ -28,6 +28,7 @@ from slowapi.util import get_remote_address
 import config
 import storage
 from classifier import _classify_one, is_falsifiable
+from claim_report import generate_claim_report, ClaimReportResponse
 from fact_checker import check_claim
 
 # Rate-limit the LLM-backed endpoint so a bot can't burn the Gemini quota.
@@ -50,6 +51,13 @@ app.add_middleware(
 
 class CheckRequest(BaseModel):
     text: str
+
+
+class ReportRequest(BaseModel):
+    claim: str
+    topic: Optional[str] = None
+    fact_check_verdict: Optional[str] = None
+    fact_check_source: Optional[str] = None
 
 
 class CheckResponse(BaseModel):
@@ -83,6 +91,7 @@ def root() -> Dict[str, Any]:
         "endpoints": {
             "GET /health": "liveness check",
             "POST /check": 'classify a claim: {"text": "..."}',
+            "POST /report": "structured evidence report for a claim",
             "GET /history": "last 50 stored claims",
             "GET /monitor": "viral monitored claims ranked by reach",
             "GET /stats": "monitor KPI aggregates",
@@ -193,6 +202,42 @@ def _persist_check(original_text: str, resp: CheckResponse) -> None:
         storage.write_postgres([record])
     except Exception as e:  # pragma: no cover - defensive, logged only
         print(f"[warn] failed to persist web check: {e}")
+
+
+@app.post("/report", response_model=ClaimReportResponse)
+@limiter.limit("20/minute")
+def report(request: Request, req: ReportRequest) -> ClaimReportResponse:
+    """Generate the structured Rumor/Confidence/Summary/Key Facts/Analysis/
+    Conclusion evidence report for one claim.
+
+    This is a separate, heavier call from /check on purpose — it's only
+    fetched when a user explicitly asks to see the full write-up for a claim
+    that already passed triage, not on every classification.
+    """
+    claim_text = (req.claim or "").strip()
+    if not claim_text:
+        raise HTTPException(status_code=422, detail="claim must not be empty")
+    if not config.GOOGLE_API_KEY:
+        raise HTTPException(status_code=503, detail="GOOGLE_API_KEY not configured")
+
+    client = _genai_client()
+    try:
+        # Fail fast, same as /check: at most 2 tries, 2s backoff, so a
+        # throttled Gemini returns a quick "try again" instead of hanging.
+        return generate_claim_report(
+            client,
+            claim_text=claim_text,
+            topic=req.topic,
+            fact_check_verdict=req.fact_check_verdict,
+            fact_check_source=req.fact_check_source,
+            max_attempts=2,
+            initial_backoff=2,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail="The AI model is busy right now — please try again in a moment.",
+        ) from e
 
 
 @app.get("/history")
