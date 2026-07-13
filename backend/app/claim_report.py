@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 import config
 from classifier import _parse_json  # reuse the existing fenced-JSON parser
+from rate_limiter import gemini_limiter
 
 
 class ClaimReportResponse(BaseModel):
@@ -105,6 +106,7 @@ def generate_claim_report(
     last_err: Optional[str] = None
     for attempt in range(max_attempts):
         try:
+            gemini_limiter.acquire()
             response = client.models.generate_content(
                 model=config.MODEL_NAME,
                 contents=contents,

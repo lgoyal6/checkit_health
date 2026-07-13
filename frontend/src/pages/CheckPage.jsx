@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { checkClaim, warmUp } from "../api.js";
+import { checkClaim, getReport, warmUp } from "../api.js";
 import VerdictCard from "../components/VerdictCard.jsx";
 
 const EXAMPLES = [
@@ -15,6 +15,13 @@ export default function CheckPage() {
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
 
+  // Full evidence report (Rumor/Confidence/Summary/Key Facts/Analysis/
+  // Conclusion), fetched separately from /check since it's a heavier call
+  // that should only run once we know we have a real medical claim.
+  const [report, setReport] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState("");
+
   // Wake the free-tier backend on load so the first check isn't a cold start.
   useEffect(() => {
     warmUp();
@@ -24,6 +31,31 @@ export default function CheckPage() {
     setText("");
     setResult(null);
     setError("");
+    setReport(null);
+    setReportLoading(false);
+    setReportError("");
+  }
+
+  async function fetchReport(data) {
+    setReport(null);
+    setReportError("");
+    setReportLoading(true);
+    try {
+      const claimText = data.claim || text;
+      const rep = await getReport({
+        claim: claimText,
+        topic: data.topic,
+        factCheckVerdict: data.fact_check_verdict,
+        factCheckSource: data.fact_check_source,
+      });
+      setReport(rep);
+    } catch (err) {
+      setReportError(
+        err.message || "Couldn't generate the evidence report. Please try again.",
+      );
+    } finally {
+      setReportLoading(false);
+    }
   }
 
   async function runCheck(claimText) {
@@ -31,9 +63,14 @@ export default function CheckPage() {
     setLoading(true);
     setError("");
     setResult(null);
+    setReport(null);
+    setReportError("");
     try {
       const data = await checkClaim(claimText.trim());
       setResult(data);
+      if (data.label === "MEDICAL_CLAIM") {
+        fetchReport(data);
+      }
     } catch (err) {
       setError(err.message || "Something went wrong. Please try again.");
     } finally {
@@ -116,7 +153,13 @@ export default function CheckPage() {
 
       {result && (
         <div className="mt-6">
-          <VerdictCard result={result} />
+          <VerdictCard
+            result={result}
+            report={report}
+            reportLoading={reportLoading}
+            reportError={reportError}
+            onRetryReport={() => fetchReport(result)}
+          />
         </div>
       )}
 

@@ -1,6 +1,7 @@
 // Renders the classifier verdict plus, when present, an existing fact check.
 // Card accent color reflects confidence: green > 0.8, amber 0.7–0.8, slate below.
 import { truthVerdict } from "../verdict.js";
+import ReportCard from "./ReportCard.jsx";
 
 // Plain-English name + one-line meaning for each machine label, so users don't
 // have to decode MEDICAL_CLAIM / GENERAL_HEALTH / NOISE.
@@ -32,7 +33,13 @@ function confidenceStyle(label, confidence) {
   return { border: "border-slate-300", chip: "bg-slate-200 text-slate-700" };
 }
 
-export default function VerdictCard({ result }) {
+export default function VerdictCard({
+  result,
+  report,
+  reportLoading,
+  reportError,
+  onRetryReport,
+}) {
   const { label, claim, topic, confidence, reasoning } = result;
   const style = confidenceStyle(label, confidence);
   const meta = LABELS[label] || { name: label, blurb: "" };
@@ -113,61 +120,70 @@ export default function VerdictCard({ result }) {
         </div>
       )}
 
-      {/* Fact-check block — this is the "is it TRUE?" answer, separate from the
-          claim-confidence score above. */}
-      {label === "MEDICAL_CLAIM" && (
+      {/* Quick pointer to an existing published fact-check, if we have one —
+          kept short since the full evidence report below covers the rest. */}
+      {label === "MEDICAL_CLAIM" && hasFactCheck && (
         <div className="mt-4 border-t border-slate-100 pt-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Is it true? — what fact-checkers say
+            Closest published fact-check
           </p>
-          {hasFactCheck ? (
-            <div className="mt-2">
-              <span
-                className={`inline-block rounded-md px-3 py-1 text-sm font-bold uppercase tracking-wide ring-1 ${verdict.cls}`}
+          <div className="mt-2">
+            <span
+              className={`inline-block rounded-md px-3 py-1 text-sm font-bold uppercase tracking-wide ring-1 ${verdict.cls}`}
+            >
+              {verdict.label}
+            </span>
+            <p className="mt-2 text-sm text-slate-800">
+              <span className="font-semibold">
+                {result.fact_check_source || "Unknown publisher"}:
+              </span>{" "}
+              {result.fact_check_verdict}
+            </p>
+            {result.fact_check_url && (
+              <a
+                href={result.fact_check_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 inline-block text-sm font-medium text-blue-600 hover:underline"
               >
-                {verdict.label}
-              </span>
-              <p className="mt-2 text-sm text-slate-800">
-                <span className="font-semibold">
-                  {result.fact_check_source || "Unknown publisher"}:
-                </span>{" "}
-                {result.fact_check_verdict}
-              </p>
-              {result.fact_check_url && (
-                <a
-                  href={result.fact_check_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-1 inline-block text-sm font-medium text-blue-600 hover:underline"
-                >
-                  Read the full fact check →
-                </a>
-              )}
-              <p className="mt-2 text-xs text-slate-400">
-                This is the closest published fact-check we found — open it to
-                confirm it matches your exact claim.
-              </p>
-            </div>
-          ) : (
-            <div className="mt-1">
-              <p className="text-sm text-slate-600">
-                No published fact-check exists for this yet, so it&apos;s{" "}
-                <span className="font-medium">flagged for review.</span> That
-                doesn&apos;t mean it&apos;s true or false — just unchecked.
-              </p>
-              {claim && (
-                <a
-                  href={searchUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-1 inline-block text-sm font-medium text-blue-600 hover:underline"
-                >
-                  Search the web for this claim →
-                </a>
-              )}
-            </div>
+                Read the full fact check →
+              </a>
+            )}
+            <p className="mt-2 text-xs text-slate-400">
+              Open it to confirm it matches your exact claim.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {label === "MEDICAL_CLAIM" && !hasFactCheck && !reportLoading && !report && (
+        <div className="mt-4 border-t border-slate-100 pt-4">
+          <p className="text-sm text-slate-600">
+            No published fact-check exists for this yet. That doesn&apos;t
+            mean it&apos;s true or false — just unchecked.
+          </p>
+          {claim && (
+            <a
+              href={searchUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 inline-block text-sm font-medium text-blue-600 hover:underline"
+            >
+              Search the web for this claim →
+            </a>
           )}
         </div>
+      )}
+
+      {/* Full evidence report — Rumor / Confidence Level / Summary / Key
+          Facts / Analysis / Conclusion, generated by the /report endpoint. */}
+      {label === "MEDICAL_CLAIM" && (
+        <ReportCard
+          report={report}
+          loading={reportLoading}
+          error={reportError}
+          onRetry={onRetryReport}
+        />
       )}
     </div>
   );

@@ -42,6 +42,48 @@ export function warmUp() {
   fetch(`${API_URL}/health`).catch(() => {});
 }
 
+// Full evidence report (Rumor / Confidence Level / Summary / Key Facts /
+// Analysis / Conclusion) for a single claim. Heavier than /check, so it's
+// only called once a claim has already passed triage.
+export async function getReport({ claim, topic, factCheckVerdict, factCheckSource }) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 45000);
+  let res;
+  try {
+    res = await fetch(`${API_URL}/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        claim,
+        topic: topic || null,
+        fact_check_verdict: factCheckVerdict || null,
+        fact_check_source: factCheckSource || null,
+      }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error(
+        "The report is taking too long — the AI model may be busy. Please try again in a moment.",
+      );
+    }
+    throw new Error("Couldn't reach the server. Please try again.");
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) {
+    let detail = `Request failed (${res.status})`;
+    try {
+      const body = await res.json();
+      if (body.detail) detail = body.detail;
+    } catch {
+      // response had no JSON body; keep the generic message
+    }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 export async function getHistory() {
   const res = await fetch(`${API_URL}/history`);
   if (!res.ok) throw new Error(`Failed to load history (${res.status})`);

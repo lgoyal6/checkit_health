@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 import config
+from rate_limiter import gemini_limiter
 
 
 SYSTEM_PROMPT = """You are a medical misinformation triage classifier.
@@ -147,6 +148,7 @@ def _classify_one(
     last_err: Optional[str] = None
     for attempt in range(max_attempts):
         try:
+            gemini_limiter.acquire()
             response = client.models.generate_content(
                 model=config.MODEL_NAME,
                 contents=f"Post:\n{text}",
@@ -237,6 +239,7 @@ def is_falsifiable(claim: str, client: Optional[Any] = None) -> bool:
 
     from google.genai import types
     try:
+        gemini_limiter.acquire()
         response = client.models.generate_content(
             model=config.MODEL_NAME,
             contents=f"Claim:\n{claim}",
