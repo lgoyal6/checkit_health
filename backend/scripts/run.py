@@ -30,16 +30,25 @@ def parse_args() -> argparse.Namespace:
                    help="Only process the first N posts (smoke-test the pipeline cheaply)")
     p.add_argument("--debug", action="store_true",
                    help="Print every classification and dump raw results to output/debug.json")
-    p.add_argument("--source", choices=["file", "reddit", "bluesky"], default="file",
+    p.add_argument("--source", choices=["file", "reddit", "bluesky", "mastodon", "youtube"],
+                   default="file",
                    help="Where to pull posts from (default: file via --input)")
     p.add_argument("--query", default=None,
-                   help="Search query when --source bluesky. If omitted, MONITOR_QUERIES are used.")
+                   help="Search query when --source bluesky/mastodon/youtube. "
+                        "If omitted, MONITOR_QUERIES are used.")
     p.add_argument("--subreddit", default=None,
                    help="Subreddit to scrape when --source reddit (e.g. conspiracy)")
     p.add_argument("--reddit-limit", type=int, default=50,
                    help="Max posts to pull when --source reddit")
     p.add_argument("--bluesky-limit", type=int, default=50,
                    help="Max posts to pull per Bluesky query")
+    p.add_argument("--mastodon-limit", type=int, default=50,
+                   help="Max posts to pull per Mastodon query")
+    p.add_argument("--mastodon-instance", default=None,
+                   help="Mastodon instance base URL (default: MASTODON_INSTANCE_URL "
+                        "env var, or https://mastodon.social)")
+    p.add_argument("--youtube-limit", type=int, default=50,
+                   help="Max videos to pull per YouTube query")
     p.add_argument("--skip-prefilter", action="store_true",
                    help="Bypass the keyword pre-filter and send every post to the classifier")
     p.add_argument("--skip-fact-check", action="store_true",
@@ -64,6 +73,34 @@ def main() -> int:
         posts = []
         for query in queries:
             for post in get_posts_bluesky(query, limit=args.bluesky_limit, sort="top"):
+                post_id = post["id"]
+                if post_id in seen:
+                    continue
+                seen.add(post_id)
+                posts.append(post)
+        source_desc = args.query or ", ".join(queries)
+    elif args.source == "mastodon":
+        from ingestion import get_posts_mastodon
+        queries = [args.query] if args.query else config.MONITOR_QUERIES
+        seen = set()
+        posts = []
+        for query in queries:
+            for post in get_posts_mastodon(
+                query, limit=args.mastodon_limit, instance_url=args.mastodon_instance
+            ):
+                post_id = post["id"]
+                if post_id in seen:
+                    continue
+                seen.add(post_id)
+                posts.append(post)
+        source_desc = args.query or ", ".join(queries)
+    elif args.source == "youtube":
+        from ingestion import get_posts_youtube
+        queries = [args.query] if args.query else config.MONITOR_QUERIES
+        seen = set()
+        posts = []
+        for query in queries:
+            for post in get_posts_youtube(query, limit=args.youtube_limit):
                 post_id = post["id"]
                 if post_id in seen:
                     continue

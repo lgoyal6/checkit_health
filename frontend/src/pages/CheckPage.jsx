@@ -51,7 +51,8 @@ export default function CheckPage() {
       setReport(rep);
     } catch (err) {
       setReportError(
-        err.message || "Couldn't generate the evidence report. Please try again.",
+        err.message ||
+          "Couldn't generate the evidence report. Please try again.",
       );
     } finally {
       setReportLoading(false);

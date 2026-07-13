@@ -8,6 +8,7 @@ touching the rest of the pipeline. See README for the data contract.
 import csv
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Any
@@ -133,6 +134,124 @@ def get_posts_bluesky(query: str, limit: int = 50, sort: str = "top") -> List[Di
             "username": author.get("handle") or "",
             "retweet_count": int(item.get("repostCount") or 0),
             "like_count": int(item.get("likeCount") or 0),
+        })
+
+    _validate(posts)
+    return posts
+
+
+def get_posts_mastodon(query: str, limit: int = 50, instance_url: str = None) -> List[Dict[str, Any]]:
+    """Search public Mastodon statuses and map them to the standard data contract.
+
+    Requires MASTODON_ACCESS_TOKEN in the environment (Settings -> Development
+    -> New application on your instance; the `read:search` scope is enough).
+    Defaults to the mastodon.social instance via MASTODON_INSTANCE_URL, but
+    works against any instance you hold a token for. Mastodon has no repost
+    concept in the search API response, so `retweet_count` is filled with
+    `replies_count` as a reach proxy and `like_count` with `favourites_count`.
+    """
+    import requests  # imported lazily so file-based runs need no network deps
+
+    access_token = os.environ.get("MASTODON_ACCESS_TOKEN")
+    if not access_token:
+        raise RuntimeError(
+            "Mastodon ingestion needs a MASTODON_ACCESS_TOKEN environment "
+            "variable. Create one under Settings -> Development on your "
+            "instance (Preferences -> Development -> New application)."
+        )
+    base_url = (
+        instance_url
+        or os.environ.get("MASTODON_INSTANCE_URL")
+        or "https://mastodon.social"
+    ).rstrip("/")
+
+    search_resp = requests.get(
+        f"{base_url}/api/v2/search",
+        params={"q": query, "type": "statuses", "limit": limit, "resolve": "false"},
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=30,
+    )
+    search_resp.raise_for_status()
+
+    posts: List[Dict[str, Any]] = []
+    for status in search_resp.json().get("statuses", []):
+        text = re.sub(r"<[^>]+>", " ", status.get("content") or "")
+        text = re.sub(r"\s+", " ", text).strip()
+        account = status.get("account") or {}
+        posts.append({
+            "id": f"mastodon_{status.get('id')}",
+            "text": text,
+            "timestamp": status.get("created_at") or "",
+            "username": account.get("acct") or "",
+            "retweet_count": int(status.get("reblogs_count") or 0),
+            "like_count": int(status.get("favourites_count") or 0),
+        })
+
+    _validate(posts)
+    return posts
+
+
+def get_posts_youtube(query: str, limit: int = 50) -> List[Dict[str, Any]]:
+    """Search YouTube videos and map them to the standard data contract.
+
+    Requires YOUTUBE_API_KEY in the environment (Google Cloud Console ->
+    APIs & Services -> Credentials, with the YouTube Data API v3 enabled).
+    Title and description are combined into `text`. YouTube has no repost
+    concept, so `retweet_count` is filled with `viewCount` as a reach proxy
+    and `like_count` with the video's actual `likeCount`.
+    """
+    import requests  # imported lazily so file-based runs need no network deps
+
+    api_key = os.environ.get("YOUTUBE_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "YouTube ingestion needs a YOUTUBE_API_KEY environment variable. "
+            "Create one at https://console.cloud.google.com/apis/credentials "
+            "with the YouTube Data API v3 enabled."
+        )
+
+    search_resp = requests.get(
+        "https://www.googleapis.com/youtube/v3/search",
+        params={
+            "key": api_key,
+            "q": query,
+            "part": "snippet",
+            "type": "video",
+            "maxResults": min(limit, 50),
+            "order": "relevance",
+        },
+        timeout=30,
+    )
+    search_resp.raise_for_status()
+    video_ids = [
+        item["id"]["videoId"]
+        for item in search_resp.json().get("items", [])
+        if item.get("id", {}).get("videoId")
+    ]
+    if not video_ids:
+        return []
+
+    stats_resp = requests.get(
+        "https://www.googleapis.com/youtube/v3/videos",
+        params={"key": api_key, "id": ",".join(video_ids), "part": "snippet,statistics"},
+        timeout=30,
+    )
+    stats_resp.raise_for_status()
+
+    posts: List[Dict[str, Any]] = []
+    for item in stats_resp.json().get("items", []):
+        snippet = item.get("snippet") or {}
+        stats = item.get("statistics") or {}
+        title = (snippet.get("title") or "").strip()
+        description = (snippet.get("description") or "").strip()
+        text = f"{title}\n\n{description}" if description else title
+        posts.append({
+            "id": f"youtube_{item.get('id')}",
+            "text": text,
+            "timestamp": snippet.get("publishedAt") or "",
+            "username": snippet.get("channelTitle") or "",
+            "retweet_count": int(stats.get("viewCount") or 0),
+            "like_count": int(stats.get("likeCount") or 0),
         })
 
     _validate(posts)

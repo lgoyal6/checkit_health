@@ -13,6 +13,19 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 # these in the scheduler/backend environment.
 BLUESKY_IDENTIFIER = os.environ.get("BLUESKY_IDENTIFIER")
 BLUESKY_APP_PASSWORD = os.environ.get("BLUESKY_APP_PASSWORD")
+
+# Mastodon monitoring source. Create an application under Settings ->
+# Development on your instance to get an access token (read:search scope is
+# enough). Defaults to mastodon.social; point it at any instance you have a
+# token for.
+MASTODON_INSTANCE_URL = os.environ.get("MASTODON_INSTANCE_URL", "https://mastodon.social")
+MASTODON_ACCESS_TOKEN = os.environ.get("MASTODON_ACCESS_TOKEN")
+
+# YouTube monitoring source (search + video stats via the YouTube Data API
+# v3). Create a key in Google Cloud Console with the YouTube Data API v3
+# enabled: https://console.cloud.google.com/apis/credentials
+YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
+
 MONITOR_QUERIES = [
     "vaccine",
     "ivermectin",

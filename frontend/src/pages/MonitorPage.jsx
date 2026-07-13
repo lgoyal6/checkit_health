@@ -13,10 +13,34 @@ const WINDOWS = [
 // return, so they stay meaningful whether it's a quiet day or something is
 // actually spiking — no backend change needed.
 const TIER_DEFS = [
-  { key: "viral", label: "Viral", pctFloor: 0.97, dot: "bg-red-500", pill: "bg-red-600" },
-  { key: "high", label: "High", pctFloor: 0.85, dot: "bg-amber-500", pill: "bg-amber-500" },
-  { key: "medium", label: "Medium", pctFloor: 0.5, dot: "bg-blue-500", pill: "bg-blue-500" },
-  { key: "low", label: "Low", pctFloor: 0, dot: "bg-slate-400", pill: "bg-slate-500" },
+  {
+    key: "viral",
+    label: "Viral",
+    pctFloor: 0.97,
+    dot: "bg-red-500",
+    pill: "bg-red-600",
+  },
+  {
+    key: "high",
+    label: "High",
+    pctFloor: 0.85,
+    dot: "bg-amber-500",
+    pill: "bg-amber-500",
+  },
+  {
+    key: "medium",
+    label: "Medium",
+    pctFloor: 0.5,
+    dot: "bg-blue-500",
+    pill: "bg-blue-500",
+  },
+  {
+    key: "low",
+    label: "Low",
+    pctFloor: 0,
+    dot: "bg-slate-400",
+    pill: "bg-slate-500",
+  },
 ];
 
 function formatDate(iso) {
@@ -30,7 +54,39 @@ function formatNumber(n) {
 }
 
 function reach(row) {
-  return Number(row.reach ?? 0) || Number(row.like_count || 0) + Number(row.retweet_count || 0);
+  return (
+    Number(row.reach ?? 0) ||
+    Number(row.like_count || 0) + Number(row.retweet_count || 0)
+  );
+}
+
+// Sort options for ordering rows within a tier. "reach" (likes + reposts) is
+// the default and also what tiers are bucketed by; the others just reorder
+// the same rows by a different engagement signal.
+const SORT_OPTIONS = [
+  ["reach", "Reach (likes + reposts)"],
+  ["likes", "Likes"],
+  ["reposts", "Reposts"],
+  ["newest", "Newest"],
+  ["confidence", "Confidence"],
+];
+
+function metricValue(row, sortBy) {
+  switch (sortBy) {
+    case "likes":
+      return Number(row.like_count || 0);
+    case "reposts":
+      return Number(row.retweet_count || 0);
+    case "newest":
+      return (
+        new Date(row.timestamp_processed || row.timestamp || 0).getTime() || 0
+      );
+    case "confidence":
+      return Number(row.confidence || 0);
+    case "reach":
+    default:
+      return reach(row);
+  }
 }
 
 // Buckets `rows` into { viral, high, medium, low } by percentile of reach
@@ -41,7 +97,8 @@ function tierRows(rows) {
 
   const sorted = [...rows].sort((a, b) => reach(a) - reach(b));
   const n = sorted.length;
-  const thresholdAt = (pct) => reach(sorted[Math.max(0, Math.min(n - 1, Math.ceil(pct * n) - 1))]);
+  const thresholdAt = (pct) =>
+    reach(sorted[Math.max(0, Math.min(n - 1, Math.ceil(pct * n) - 1))]);
   const thresholds = {
     low: thresholdAt(0.5),
     medium: thresholdAt(0.85),
@@ -67,7 +124,9 @@ function verdictBadge(row) {
   if (row.fact_check_verdict) {
     const verdict = truthVerdict(row.fact_check_verdict);
     return (
-      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${verdict.cls}`}>
+      <span
+        className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${verdict.cls}`}
+      >
         {verdict.label}
       </span>
     );
@@ -82,7 +141,9 @@ function verdictBadge(row) {
 function StatCard({ label, value, sub }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="text-2xl font-semibold tabular-nums text-slate-900">{value}</div>
+      <div className="text-2xl font-semibold tabular-nums text-slate-900">
+        {value}
+      </div>
       <div className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
         {label}
       </div>
@@ -91,12 +152,17 @@ function StatCard({ label, value, sub }) {
   );
 }
 
-function ClaimTable({ rows, expanded, setExpanded }) {
+function ClaimTable({ rows, sortBy, expanded, setExpanded }) {
   if (rows.length === 0) {
     return (
-      <p className="px-4 py-6 text-sm text-slate-500">No claims in this tier for the current filters.</p>
+      <p className="px-4 py-6 text-sm text-slate-500">
+        No claims in this tier for the current filters.
+      </p>
     );
   }
+  const sortedRows = [...rows].sort(
+    (a, b) => metricValue(b, sortBy) - metricValue(a, sortBy),
+  );
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[880px] text-left text-sm">
@@ -111,7 +177,7 @@ function ClaimTable({ rows, expanded, setExpanded }) {
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {rows.map((row) => {
+          {sortedRows.map((row) => {
             const isOpen = expanded === row.post_id;
             return (
               <Fragment key={row.post_id}>
@@ -120,17 +186,23 @@ function ClaimTable({ rows, expanded, setExpanded }) {
                   className="cursor-pointer hover:bg-slate-50"
                 >
                   <td className="max-w-md px-4 py-3">
-                    <div className="truncate font-medium text-slate-800">{row.claim}</div>
+                    <div className="truncate font-medium text-slate-800">
+                      {row.claim}
+                    </div>
                     <div className="mt-1 truncate text-xs text-slate-500">
                       @{row.username || "unknown"}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{row.topic || "-"}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {row.topic || "-"}
+                  </td>
                   <td className="px-4 py-3 font-semibold tabular-nums text-slate-800">
                     {formatNumber(reach(row))}
                   </td>
                   <td className="px-4 py-3">{verdictBadge(row)}</td>
-                  <td className="px-4 py-3 text-slate-600">{row.source || "-"}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {row.source || "-"}
+                  </td>
                   <td className="px-4 py-3 text-slate-500">
                     {formatDate(row.timestamp_processed || row.timestamp)}
                   </td>
@@ -143,7 +215,9 @@ function ClaimTable({ rows, expanded, setExpanded }) {
                           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                             Full text
                           </p>
-                          <p className="mt-1 whitespace-pre-wrap text-slate-800">{row.text}</p>
+                          <p className="mt-1 whitespace-pre-wrap text-slate-800">
+                            {row.text}
+                          </p>
                           {row.classification_reasoning && (
                             <>
                               <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -189,7 +263,9 @@ function ClaimTable({ rows, expanded, setExpanded }) {
                           <div className="mt-2 flex justify-between gap-4">
                             <span>Confidence</span>
                             <span className="font-semibold tabular-nums text-slate-900">
-                              {row.confidence != null ? `${Math.round(row.confidence * 100)}%` : "-"}
+                              {row.confidence != null
+                                ? `${Math.round(row.confidence * 100)}%`
+                                : "-"}
                             </span>
                           </div>
                         </div>
@@ -217,6 +293,7 @@ export default function MonitorPage() {
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState(null);
   const [activeTier, setActiveTier] = useState("viral");
+  const [sortBy, setSortBy] = useState("reach");
 
   useEffect(() => {
     let active = true;
@@ -270,12 +347,17 @@ export default function MonitorPage() {
     <div>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Viral health misinformation monitor</h1>
+          <h1 className="text-2xl font-bold">
+            Viral health misinformation monitor
+          </h1>
           <p className="mt-1 max-w-2xl text-sm text-slate-600">
-            Ranked social health claims from monitored sources, split by engagement tier.
+            Ranked social health claims from monitored sources, split by
+            engagement tier.
           </p>
         </div>
-        <div className="text-sm text-slate-500">{visible.length} claims shown</div>
+        <div className="text-sm text-slate-500">
+          {visible.length} claims shown
+        </div>
       </div>
 
       {error && (
@@ -288,7 +370,11 @@ export default function MonitorPage() {
         <StatCard
           label="Claims monitored"
           value={formatNumber(stats.flagged_claims)}
-          sub={loading ? "Loading" : `${WINDOWS.find(([k]) => k === window)?.[1] || window}`}
+          sub={
+            loading
+              ? "Loading"
+              : `${WINDOWS.find(([k]) => k === window)?.[1] || window}`
+          }
         />
         <StatCard
           label="Total reach"
@@ -300,7 +386,11 @@ export default function MonitorPage() {
           value={formatNumber(stats.likely_false_count)}
           sub={`${formatNumber(stats.verified_count)} verified by fact-checks`}
         />
-        <StatCard label="Top topic" value={topTopic} sub="By reach in this window" />
+        <StatCard
+          label="Top topic"
+          value={topTopic}
+          sub="By reach in this window"
+        />
       </section>
 
       <section className="mt-6 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center">
@@ -345,6 +435,17 @@ export default function MonitorPage() {
           placeholder="Search claim, post, author..."
           className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:outline-none"
         />
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:outline-none"
+        >
+          {SORT_OPTIONS.map(([value, label]) => (
+            <option key={value} value={value}>
+              Sort: {label}
+            </option>
+          ))}
+        </select>
       </section>
 
       {loading ? (
@@ -373,7 +474,9 @@ export default function MonitorPage() {
                         : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100",
                   ].join(" ")}
                 >
-                  <span className={`h-2 w-2 rounded-full ${isActive ? "bg-white" : t.dot}`} />
+                  <span
+                    className={`h-2 w-2 rounded-full ${isActive ? "bg-white" : t.dot}`}
+                  />
                   {t.label}
                   <span
                     className={`rounded-full px-1.5 text-xs ${isActive ? "bg-white/25" : "bg-slate-100"}`}
@@ -384,7 +487,12 @@ export default function MonitorPage() {
               );
             })}
           </div>
-          <ClaimTable rows={tiers[activeTier]} expanded={expanded} setExpanded={setExpanded} />
+          <ClaimTable
+            rows={tiers[activeTier]}
+            sortBy={sortBy}
+            expanded={expanded}
+            setExpanded={setExpanded}
+          />
         </div>
       )}
     </div>
