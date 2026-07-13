@@ -1,13 +1,20 @@
 # Render blueprint for the Checkit Health FastAPI backend.
 # Deploy: push to GitHub, then in the Render dashboard "New +" -> "Blueprint"
-# and point it at this repo. Set the secret env vars (marked sync:false) in the
-# dashboard after the first deploy.
+# and point it at this repo (Blueprint Path: backend/render.yaml). Set the
+# secret env vars (marked sync:false) in the dashboard after the first deploy.
+#
+# rootDir is backend/app because api.py and its sibling modules (config.py,
+# storage.py, classifier.py, ...) use flat same-directory imports
+# (`import config`, not `from . import config`), matching how the ingestion
+# CLI and the GitHub Actions workflow already invoke them. buildCommand
+# reaches up one level for requirements.txt, which lives in backend/.
 services:
   - type: web
     name: checkit-health-api
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    rootDir: backend/app
+    buildCommand: pip install -r ../requirements.txt
     startCommand: uvicorn api:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:

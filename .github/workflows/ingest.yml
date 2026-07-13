@@ -23,6 +23,18 @@ jobs:
   ingest:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    defaults:
+      run:
+        # requirements.txt and scripts/run.py now live under backend/,
+        # following the June restructuring.
+        working-directory: backend
+    env:
+      # run.py imports config/ingestion/classifier/storage as flat sibling
+      # modules (e.g. `import config`, not `app.config`) — those modules
+      # live in app/, so it has to be on the interpreter's module search
+      # path. Relative PYTHONPATH entries are resolved against cwd, which
+      # `defaults.run.working-directory: backend` above sets to backend/.
+      PYTHONPATH: app
     steps:
       - uses: actions/checkout@v4
 
@@ -46,12 +58,12 @@ jobs:
           RETRY_INITIAL_BACKOFF_SECONDS: "10"
         run: |
           if [ -n "${{ github.event.inputs.query }}" ]; then
-            python -u run.py \
+            python -u scripts/run.py \
               --source bluesky \
               --query "${{ github.event.inputs.query }}" \
               --limit "${{ github.event.inputs.limit || '50' }}"
           else
-            python -u run.py \
+            python -u scripts/run.py \
               --source bluesky \
               --limit "${{ github.event.inputs.limit || '50' }}"
           fi
@@ -72,12 +84,12 @@ jobs:
           RETRY_INITIAL_BACKOFF_SECONDS: "10"
         run: |
           if [ -n "${{ github.event.inputs.query }}" ]; then
-            python -u run.py \
+            python -u scripts/run.py \
               --source mastodon \
               --query "${{ github.event.inputs.query }}" \
               --limit "${{ github.event.inputs.limit || '50' }}"
           else
-            python -u run.py \
+            python -u scripts/run.py \
               --source mastodon \
               --limit "${{ github.event.inputs.limit || '50' }}"
           fi
@@ -97,12 +109,12 @@ jobs:
           RETRY_INITIAL_BACKOFF_SECONDS: "10"
         run: |
           if [ -n "${{ github.event.inputs.query }}" ]; then
-            python -u run.py \
+            python -u scripts/run.py \
               --source youtube \
               --query "${{ github.event.inputs.query }}" \
               --limit "${{ github.event.inputs.limit || '50' }}"
           else
-            python -u run.py \
+            python -u scripts/run.py \
               --source youtube \
               --limit "${{ github.event.inputs.limit || '50' }}"
           fi

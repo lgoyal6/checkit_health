@@ -52,6 +52,13 @@ MAX_TOKENS = 512
 REPORT_MAX_TOKENS = int(os.environ.get("REPORT_MAX_TOKENS", "768"))
 GEMINI_TIMEOUT_MS = int(os.environ.get("GEMINI_TIMEOUT_MS", "60000"))
 
+# Client-side throttling (see rate_limiter.py) so we self-limit before Gemini
+# or Google's Fact Check API rejects us. Gemini Flash's free tier is 15
+# requests/minute; Fact Check Tools API has no published per-minute cap, so
+# 60/min is just a conservative default to stay well within the daily quota.
+GEMINI_RPM = int(os.environ.get("GEMINI_RPM", "15"))
+FACT_CHECK_RPM = int(os.environ.get("FACT_CHECK_RPM", "60"))
+
 DEFAULT_INPUT_PATH = "data/posts.json"
 DEFAULT_OUTPUT_PATH = "output/claims.json"
 DEFAULT_DB_PATH = "db/claims.db"
