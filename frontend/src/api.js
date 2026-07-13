@@ -36,6 +36,49 @@ export async function checkClaim(text) {
   return res.json();
 }
 
+// Fetches the structured Rumor/Confidence/Summary/Key Facts/Analysis/
+// Conclusion evidence report for a claim that already passed /check. This is
+// a separate, heavier call — only invoke it when the user explicitly asks
+// for the full write-up (see CheckPage's "Show full evidence report" button).
+export async function getReport({ claim, topic, factCheckVerdict, factCheckSource }) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 45000);
+  let res;
+  try {
+    res = await fetch(`${API_URL}/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        claim,
+        topic,
+        fact_check_verdict: factCheckVerdict,
+        fact_check_source: factCheckSource,
+      }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error(
+        "This is taking too long — the AI model may be busy. Please try again in a moment.",
+      );
+    }
+    throw new Error("Couldn't reach the server. Please try again.");
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) {
+    let detail = `Request failed (${res.status})`;
+    try {
+      const body = await res.json();
+      if (body.detail) detail = body.detail;
+    } catch {
+      // response had no JSON body; keep the generic message
+    }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 // Fire-and-forget wake-up so the free-tier backend is warm by the time the
 // user submits (avoids a cold-start wait on the first real request).
 export function warmUp() {

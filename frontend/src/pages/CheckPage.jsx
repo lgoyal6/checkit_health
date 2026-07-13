@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { checkClaim, warmUp } from "../api.js";
+import { checkClaim, getReport, warmUp } from "../api.js";
 import VerdictCard from "../components/VerdictCard.jsx";
 
 const EXAMPLES = [
@@ -15,6 +15,10 @@ export default function CheckPage() {
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
 
+  const [report, setReport] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState("");
+
   // Wake the free-tier backend on load so the first check isn't a cold start.
   useEffect(() => {
     warmUp();
@@ -24,6 +28,9 @@ export default function CheckPage() {
     setText("");
     setResult(null);
     setError("");
+    setReport(null);
+    setReportLoading(false);
+    setReportError("");
   }
 
   async function runCheck(claimText) {
@@ -31,6 +38,8 @@ export default function CheckPage() {
     setLoading(true);
     setError("");
     setResult(null);
+    setReport(null);
+    setReportError("");
     try {
       const data = await checkClaim(claimText.trim());
       setResult(data);
@@ -38,6 +47,25 @@ export default function CheckPage() {
       setError(err.message || "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadReport() {
+    if (!result || reportLoading) return;
+    setReportLoading(true);
+    setReportError("");
+    try {
+      const data = await getReport({
+        claim: result.claim || text,
+        topic: result.topic,
+        factCheckVerdict: result.fact_check_verdict,
+        factCheckSource: result.fact_check_source,
+      });
+      setReport(data);
+    } catch (err) {
+      setReportError(err.message || "Couldn't build the evidence report. Please try again.");
+    } finally {
+      setReportLoading(false);
     }
   }
 
@@ -116,7 +144,13 @@ export default function CheckPage() {
 
       {result && (
         <div className="mt-6">
-          <VerdictCard result={result} />
+          <VerdictCard
+            result={result}
+            report={report}
+            reportLoading={reportLoading}
+            reportError={reportError}
+            onLoadReport={loadReport}
+          />
         </div>
       )}
 
