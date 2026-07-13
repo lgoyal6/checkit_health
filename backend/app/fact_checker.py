@@ -9,15 +9,13 @@ If no key is configured or no match is found, `check_claim` returns None and the
 pipeline marks the record `unverified`.
 """
 
-# at the top of fact_checker.py
-from rate_limiter import fact_check_limiter
-
-
 import os
 import re
 from typing import Any, Dict, Optional
 
 import requests
+
+from rate_limiter import fact_check_limiter
 
 API_URL = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
 FACT_CHECK_KEY = os.environ.get("GOOGLE_FACT_CHECK_KEY")
@@ -49,10 +47,6 @@ def _overlap(claim: str, candidate: str) -> float:
     b = _keywords(candidate)
     return len(a & b) / len(a)
 
-# immediately before the Google Fact Check Tools HTTP call in check_claim()
-fact_check_limiter.acquire()
-response = requests.get(FACT_CHECK_KEY, params=params, timeout=...)
-
 def check_claim(claim: str, api_key: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Look up an existing fact check for `claim`.
 
@@ -66,6 +60,7 @@ def check_claim(claim: str, api_key: Optional[str] = None) -> Optional[Dict[str,
         return None
 
     try:
+        fact_check_limiter.acquire()
         resp = requests.get(
             API_URL,
             params={"query": claim, "key": key, "languageCode": "en"},
