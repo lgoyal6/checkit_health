@@ -1,8 +1,9 @@
-name: Scheduled Bluesky monitoring
+name: Scheduled social monitoring
 
-# Pulls fresh posts from Bluesky, runs the full classify -> falsifiability
-# -> fact-check pipeline, and upserts the results into Postgres (Supabase) so
-# the live monitor grows on its own. Runs every 6 hours; also triggerable by hand.
+# Pulls fresh posts from Bluesky, Mastodon, and YouTube, runs the full
+# classify -> falsifiability -> fact-check pipeline for each, and upserts
+# the results into Postgres (Supabase) so the live monitor grows on its own.
+# Runs every 6 hours; also triggerable by hand.
 
 on:
   schedule:
@@ -33,7 +34,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run pipeline into Postgres
+      - name: Run pipeline into Postgres (Bluesky)
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           GOOGLE_FACT_CHECK_KEY: ${{ secrets.GOOGLE_FACT_CHECK_KEY }}
@@ -52,5 +53,56 @@ jobs:
           else
             python -u run.py \
               --source bluesky \
+              --limit "${{ github.event.inputs.limit || '50' }}"
+          fi
+
+      # TODO: add MASTODON_ACCESS_TOKEN (and optionally MASTODON_INSTANCE_URL)
+      # as repo secrets to activate this step. Until then it fails fast and
+      # continue-on-error keeps the rest of the workflow green.
+      - name: Run pipeline into Postgres (Mastodon)
+        continue-on-error: true
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GOOGLE_FACT_CHECK_KEY: ${{ secrets.GOOGLE_FACT_CHECK_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }}
+          MASTODON_INSTANCE_URL: ${{ secrets.MASTODON_INSTANCE_URL }}
+          PYTHONUNBUFFERED: "1"
+          RETRY_MAX_ATTEMPTS: "2"
+          RETRY_INITIAL_BACKOFF_SECONDS: "10"
+        run: |
+          if [ -n "${{ github.event.inputs.query }}" ]; then
+            python -u run.py \
+              --source mastodon \
+              --query "${{ github.event.inputs.query }}" \
+              --limit "${{ github.event.inputs.limit || '50' }}"
+          else
+            python -u run.py \
+              --source mastodon \
+              --limit "${{ github.event.inputs.limit || '50' }}"
+          fi
+
+      # TODO: add YOUTUBE_API_KEY as a repo secret to activate this step.
+      # Until then it fails fast and continue-on-error keeps the rest of the
+      # workflow green.
+      - name: Run pipeline into Postgres (YouTube)
+        continue-on-error: true
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GOOGLE_FACT_CHECK_KEY: ${{ secrets.GOOGLE_FACT_CHECK_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          PYTHONUNBUFFERED: "1"
+          RETRY_MAX_ATTEMPTS: "2"
+          RETRY_INITIAL_BACKOFF_SECONDS: "10"
+        run: |
+          if [ -n "${{ github.event.inputs.query }}" ]; then
+            python -u run.py \
+              --source youtube \
+              --query "${{ github.event.inputs.query }}" \
+              --limit "${{ github.event.inputs.limit || '50' }}"
+          else
+            python -u run.py \
+              --source youtube \
               --limit "${{ github.event.inputs.limit || '50' }}"
           fi

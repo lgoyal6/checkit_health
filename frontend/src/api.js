@@ -45,7 +45,12 @@ export function warmUp() {
 // Full evidence report (Rumor / Confidence Level / Summary / Key Facts /
 // Analysis / Conclusion) for a single claim. Heavier than /check, so it's
 // only called once a claim has already passed triage.
-export async function getReport({ claim, topic, factCheckVerdict, factCheckSource }) {
+export async function getReport({
+  claim,
+  topic,
+  factCheckVerdict,
+  factCheckSource,
+}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 45000);
   let res;
@@ -90,7 +95,12 @@ export async function getHistory() {
   return res.json();
 }
 
-export async function getTrending({ window = "7d", topic = "", source = "", limit = 50 } = {}) {
+export async function getTrending({
+  window = "7d",
+  topic = "",
+  source = "",
+  limit = 50,
+} = {}) {
   const params = new URLSearchParams({ window, limit: String(limit) });
   if (topic) params.set("topic", topic);
   if (source) params.set("source", source);

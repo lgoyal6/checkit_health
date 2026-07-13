@@ -4,7 +4,12 @@
 
 const CONFIDENCE = {
   low: { label: "Low", pct: 33, bar: "bg-sky-400", text: "text-slate-700" },
-  medium: { label: "Medium", pct: 66, bar: "bg-sky-500", text: "text-slate-700" },
+  medium: {
+    label: "Medium",
+    pct: 66,
+    bar: "bg-sky-500",
+    text: "text-slate-700",
+  },
   high: { label: "High", pct: 100, bar: "bg-sky-600", text: "text-slate-700" },
 };
 
@@ -94,9 +99,7 @@ export default function ReportCard({ report, loading, error, onRetry }) {
                     i % 2 === 0 ? "bg-slate-50" : "bg-white"
                   }`}
                 >
-                  <span className="font-semibold text-slate-400">
-                    {i + 1}.
-                  </span>
+                  <span className="font-semibold text-slate-400">{i + 1}.</span>
                   <span>{fact}</span>
                 </li>
               ))}
