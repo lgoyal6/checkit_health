@@ -15,6 +15,9 @@ export default function CheckPage() {
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
 
+  // Full evidence report (Rumor/Confidence/Summary/Key Facts/Analysis/
+  // Conclusion), fetched separately from /check since it's a heavier call
+  // that should only run once we know we have a real medical claim.
   const [report, setReport] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState("");
@@ -33,6 +36,28 @@ export default function CheckPage() {
     setReportError("");
   }
 
+  async function fetchReport(data) {
+    setReport(null);
+    setReportError("");
+    setReportLoading(true);
+    try {
+      const claimText = data.claim || text;
+      const rep = await getReport({
+        claim: claimText,
+        topic: data.topic,
+        factCheckVerdict: data.fact_check_verdict,
+        factCheckSource: data.fact_check_source,
+      });
+      setReport(rep);
+    } catch (err) {
+      setReportError(
+        err.message || "Couldn't generate the evidence report. Please try again.",
+      );
+    } finally {
+      setReportLoading(false);
+    }
+  }
+
   async function runCheck(claimText) {
     if (!claimText.trim() || loading) return;
     setLoading(true);
@@ -43,29 +68,13 @@ export default function CheckPage() {
     try {
       const data = await checkClaim(claimText.trim());
       setResult(data);
+      if (data.label === "MEDICAL_CLAIM") {
+        fetchReport(data);
+      }
     } catch (err) {
       setError(err.message || "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function loadReport() {
-    if (!result || reportLoading) return;
-    setReportLoading(true);
-    setReportError("");
-    try {
-      const data = await getReport({
-        claim: result.claim || text,
-        topic: result.topic,
-        factCheckVerdict: result.fact_check_verdict,
-        factCheckSource: result.fact_check_source,
-      });
-      setReport(data);
-    } catch (err) {
-      setReportError(err.message || "Couldn't build the evidence report. Please try again.");
-    } finally {
-      setReportLoading(false);
     }
   }
 
@@ -149,7 +158,7 @@ export default function CheckPage() {
             report={report}
             reportLoading={reportLoading}
             reportError={reportError}
-            onLoadReport={loadReport}
+            onRetryReport={() => fetchReport(result)}
           />
         </div>
       )}

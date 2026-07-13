@@ -36,10 +36,15 @@ export async function checkClaim(text) {
   return res.json();
 }
 
-// Fetches the structured Rumor/Confidence/Summary/Key Facts/Analysis/
-// Conclusion evidence report for a claim that already passed /check. This is
-// a separate, heavier call — only invoke it when the user explicitly asks
-// for the full write-up (see CheckPage's "Show full evidence report" button).
+// Fire-and-forget wake-up so the free-tier backend is warm by the time the
+// user submits (avoids a cold-start wait on the first real request).
+export function warmUp() {
+  fetch(`${API_URL}/health`).catch(() => {});
+}
+
+// Full evidence report (Rumor / Confidence Level / Summary / Key Facts /
+// Analysis / Conclusion) for a single claim. Heavier than /check, so it's
+// only called once a claim has already passed triage.
 export async function getReport({ claim, topic, factCheckVerdict, factCheckSource }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 45000);
@@ -50,16 +55,16 @@ export async function getReport({ claim, topic, factCheckVerdict, factCheckSourc
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         claim,
-        topic,
-        fact_check_verdict: factCheckVerdict,
-        fact_check_source: factCheckSource,
+        topic: topic || null,
+        fact_check_verdict: factCheckVerdict || null,
+        fact_check_source: factCheckSource || null,
       }),
       signal: controller.signal,
     });
   } catch (err) {
     if (err.name === "AbortError") {
       throw new Error(
-        "This is taking too long — the AI model may be busy. Please try again in a moment.",
+        "The report is taking too long — the AI model may be busy. Please try again in a moment.",
       );
     }
     throw new Error("Couldn't reach the server. Please try again.");
@@ -77,12 +82,6 @@ export async function getReport({ claim, topic, factCheckVerdict, factCheckSourc
     throw new Error(detail);
   }
   return res.json();
-}
-
-// Fire-and-forget wake-up so the free-tier backend is warm by the time the
-// user submits (avoids a cold-start wait on the first real request).
-export function warmUp() {
-  fetch(`${API_URL}/health`).catch(() => {});
 }
 
 export async function getHistory() {
