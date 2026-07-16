@@ -54,6 +54,11 @@ export default function ReportCard({ report, loading, error, onRetry }) {
 
   return (
     <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <p className="border-b border-amber-100 bg-amber-50 px-5 py-3 text-xs leading-relaxed text-amber-900">
+        AI-generated analyst summary — not medical advice or a substitute for
+        reviewing authoritative sources. A published fact-check, when linked
+        above, is the source to verify.
+      </p>
       {/* Rumor header */}
       <div className="border-l-4 border-sky-500 bg-sky-50 p-5">
         <p className="text-base font-bold text-slate-900">

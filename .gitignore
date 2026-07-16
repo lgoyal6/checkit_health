@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 venv/
 .env
+.DS_Store
 db/*.db
 # committed seed DB so /history has data on deploy
 !db/claims.db

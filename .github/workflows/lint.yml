@@ -2,9 +2,9 @@ name: Lint
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 jobs:
   python-lint:
@@ -17,14 +17,17 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install ruff
-        run: pip install ruff
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt ruff
 
       - name: Run ruff
-        run: ruff check .
+        run: ruff check backend/app backend/scripts backend/tests
 
-  prettier:
-    name: Prettier format check
+      - name: Run backend tests
+        run: PYTHONPATH=backend/app pytest backend/tests
+
+  frontend-quality:
+    name: Frontend tests and build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,10 +36,14 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install prettier
-        run: npm install --save-dev prettier
+      - name: Install frontend dependencies
+        run: npm ci
         working-directory: frontend
 
-      - name: Run prettier check
-        run: npx prettier --check "src/**/*.{js,jsx,ts,tsx,css}"
+      - name: Run frontend tests
+        run: npm run test
+        working-directory: frontend
+
+      - name: Build frontend
+        run: npm run build
         working-directory: frontend

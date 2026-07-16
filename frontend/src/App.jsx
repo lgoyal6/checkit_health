@@ -16,12 +16,15 @@ export default function App() {
             <span className="text-xl">🩺</span>
             <span className="text-lg font-bold">Checkit Health</span>
           </Link>
-          <nav className="flex gap-1">
+          <nav className="flex gap-1" aria-label="Primary navigation">
             <NavLink to="/" end className={navClass}>
               Monitor
             </NavLink>
             <NavLink to="/check" className={navClass}>
               Check
+            </NavLink>
+            <NavLink to="/history" className={navClass}>
+              History
             </NavLink>
           </nav>
         </div>

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { checkClaim, getReport, warmUp } from "../api.js";
 import VerdictCard from "../components/VerdictCard.jsx";
 
@@ -10,6 +11,8 @@ const EXAMPLES = [
 ];
 
 export default function CheckPage() {
+  const location = useLocation();
+  const processedNavigation = useRef(null);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -88,6 +91,18 @@ export default function CheckPage() {
     setText(ex);
     runCheck(ex);
   }
+
+  // Monitor sends the selected claim in navigation state. Running it here
+  // keeps the Check page usable on its own while making Monitor a one-click
+  // path to a fresh result.
+  useEffect(() => {
+    const claim = location.state?.claim?.trim();
+    if (!claim || processedNavigation.current === location.key) return;
+
+    processedNavigation.current = location.key;
+    setText(claim);
+    runCheck(claim);
+  }, [location.key]);
 
   return (
     <div className="max-w-3xl">

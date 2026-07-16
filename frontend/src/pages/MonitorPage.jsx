@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { getStats, getTrending } from "../api.js";
 import { truthVerdict } from "../verdict.js";
 
@@ -152,7 +153,7 @@ function StatCard({ label, value, sub }) {
   );
 }
 
-function ClaimTable({ rows, sortBy, expanded, setExpanded }) {
+function ClaimTable({ rows, sortBy, expanded, setExpanded, onCheckClaim }) {
   if (rows.length === 0) {
     return (
       <p className="px-4 py-6 text-sm text-slate-500">
@@ -174,6 +175,7 @@ function ClaimTable({ rows, sortBy, expanded, setExpanded }) {
             <th className="px-4 py-3">Verdict</th>
             <th className="px-4 py-3">Source</th>
             <th className="px-4 py-3">Date</th>
+            <th className="px-4 py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -181,10 +183,7 @@ function ClaimTable({ rows, sortBy, expanded, setExpanded }) {
             const isOpen = expanded === row.post_id;
             return (
               <Fragment key={row.post_id}>
-                <tr
-                  onClick={() => setExpanded(isOpen ? null : row.post_id)}
-                  className="cursor-pointer hover:bg-slate-50"
-                >
+                <tr className="hover:bg-slate-50">
                   <td className="max-w-md px-4 py-3">
                     <div className="truncate font-medium text-slate-800">
                       {row.claim}
@@ -206,10 +205,30 @@ function ClaimTable({ rows, sortBy, expanded, setExpanded }) {
                   <td className="px-4 py-3 text-slate-500">
                     {formatDate(row.timestamp_processed || row.timestamp)}
                   </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setExpanded(isOpen ? null : row.post_id)}
+                        aria-expanded={isOpen}
+                        aria-controls={`claim-details-${row.post_id}`}
+                        className="whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+                      >
+                        {isOpen ? "Hide details" : "View details"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onCheckClaim(row)}
+                        className="whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+                      >
+                        Check claim
+                      </button>
+                    </div>
+                  </td>
                 </tr>
                 {isOpen && (
-                  <tr className="bg-slate-50">
-                    <td colSpan={6} className="px-4 py-4">
+                  <tr id={`claim-details-${row.post_id}`} className="bg-slate-50">
+                    <td colSpan={7} className="px-4 py-4">
                       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -283,6 +302,7 @@ function ClaimTable({ rows, sortBy, expanded, setExpanded }) {
 }
 
 export default function MonitorPage() {
+  const navigate = useNavigate();
   const [window, setWindow] = useState("7d");
   const [topic, setTopic] = useState("");
   const [source, setSource] = useState("");
@@ -294,6 +314,12 @@ export default function MonitorPage() {
   const [expanded, setExpanded] = useState(null);
   const [activeTier, setActiveTier] = useState("viral");
   const [sortBy, setSortBy] = useState("reach");
+
+  function checkMonitoredClaim(row) {
+    navigate("/check", {
+      state: { claim: row.claim || row.text || "" },
+    });
+  }
 
   useEffect(() => {
     let active = true;
@@ -335,9 +361,11 @@ export default function MonitorPage() {
   }, [rows, query]);
 
   const tiers = useMemo(() => tierRows(visible), [visible]);
+  const activeRows = activeTier === "all" ? visible : tiers[activeTier];
 
   // If a filter/search wipes out the active tier, hop to one that has rows.
   useEffect(() => {
+    if (activeTier === "all") return;
     if (tiers[activeTier]?.length > 0) return;
     const fallback = TIER_DEFS.find((t) => tiers[t.key].length > 0);
     if (fallback) setActiveTier(fallback.key);
@@ -355,7 +383,7 @@ export default function MonitorPage() {
             engagement tier.
           </p>
         </div>
-        <div className="text-sm text-slate-500">
+        <div className="text-sm text-slate-500" aria-live="polite">
           {visible.length} claims shown
         </div>
       </div>
@@ -397,6 +425,7 @@ export default function MonitorPage() {
         <select
           value={window}
           onChange={(e) => setWindow(e.target.value)}
+          aria-label="Monitor time window"
           className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:outline-none"
         >
           {WINDOWS.map(([value, label]) => (
@@ -408,6 +437,7 @@ export default function MonitorPage() {
         <select
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
+          aria-label="Filter by topic"
           className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:outline-none"
         >
           <option value="">All topics</option>
@@ -420,6 +450,7 @@ export default function MonitorPage() {
         <select
           value={source}
           onChange={(e) => setSource(e.target.value)}
+          aria-label="Filter by source"
           className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:outline-none"
         >
           <option value="">All sources</option>
@@ -432,12 +463,14 @@ export default function MonitorPage() {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          aria-label="Search monitored claims"
           placeholder="Search claim, post, author..."
           className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:outline-none"
         />
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
+          aria-label="Sort monitored claims"
           className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:outline-none"
         >
           {SORT_OPTIONS.map(([value, label]) => (
@@ -449,7 +482,9 @@ export default function MonitorPage() {
       </section>
 
       {loading ? (
-        <p className="mt-6 text-slate-500">Loading monitor...</p>
+        <p className="mt-6 text-slate-500" role="status">
+          Loading monitor...
+        </p>
       ) : visible.length === 0 ? (
         <p className="mt-6 text-slate-500">
           No monitored social claims found for these filters.
@@ -457,6 +492,24 @@ export default function MonitorPage() {
       ) : (
         <div className="mt-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-wrap gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
+            <button
+              onClick={() => setExpanded(null) || setActiveTier("all")}
+              disabled={visible.length === 0}
+              aria-pressed={activeTier === "all"}
+              className={[
+                "flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
+                activeTier === "all"
+                  ? "bg-slate-900 text-white"
+                  : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100",
+              ].join(" ")}
+            >
+              All claims
+              <span
+                className={`rounded-full px-1.5 text-xs ${activeTier === "all" ? "bg-white/25" : "bg-slate-100"}`}
+              >
+                {visible.length}
+              </span>
+            </button>
             {TIER_DEFS.map((t) => {
               const count = tiers[t.key].length;
               const isActive = activeTier === t.key;
@@ -465,6 +518,7 @@ export default function MonitorPage() {
                   key={t.key}
                   onClick={() => setExpanded(null) || setActiveTier(t.key)}
                   disabled={count === 0}
+                  aria-pressed={isActive}
                   className={[
                     "flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
                     isActive
@@ -488,10 +542,11 @@ export default function MonitorPage() {
             })}
           </div>
           <ClaimTable
-            rows={tiers[activeTier]}
+            rows={activeRows}
             sortBy={sortBy}
             expanded={expanded}
             setExpanded={setExpanded}
+            onCheckClaim={checkMonitoredClaim}
           />
         </div>
       )}
