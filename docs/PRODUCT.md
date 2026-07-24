@@ -85,6 +85,18 @@ published fact-check. It can also produce an AI-generated analyst summary.
 Claim-detection confidence means “how likely this is a checkable medical
 claim”; it does **not** measure whether the claim is true.
 
+For each medical claim, the Check view also exposes deterministic analyst
+signals: a normalized cluster identifier, conservative language detection,
+an evidence-quality grade, adverse-event routing, configurable escalation
+reasons, response guidance, and an audit timestamp. These signals never infer
+account authenticity or coordinated behavior from a single post, never turn a
+missing fact-check into a false verdict, and never replace human judgment.
+
+Monitor responses include a cluster identifier and interactions-per-hour
+velocity alongside total reach. This lets an analyst group wording variants
+and distinguish a fast-growing claim from an old post with a large lifetime
+total.
+
 ### History
 
 History lists recent manual checks saved to Postgres. It separates items with a
@@ -102,6 +114,9 @@ matching published fact-check from those that still need evidence review.
    relevant ClaimReview item.
 7. **Store and present.** Results are saved to JSON and SQLite locally, and to
    Postgres when configured.
+8. **Attach transparent triage signals.** Deterministic rules describe
+   evidence quality, language, cluster membership, adverse-event routing,
+   escalation, privacy boundaries, and the recommended next analyst action.
 
 ## Limits and responsible use
 

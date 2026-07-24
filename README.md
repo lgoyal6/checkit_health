@@ -16,8 +16,8 @@ Bluesky / Mastodon / YouTube / Reddit / file
   → Postgres / SQLite / JSON → FastAPI → React monitor and Check view
 ```
 
-- **Monitor:** browse ranked social claims by topic, source, time window, and engagement tier. **Check claim** sends any monitor row to the manual checker.
-- **Check:** classify a pasted statement, find a possible matching published fact-check, and optionally generate an AI summary for analyst review.
+- **Monitor:** browse ranked social claims by topic, source, time window, engagement tier, normalized claim cluster, and growth velocity. **Check claim** sends any monitor row to the manual checker.
+- **Check:** classify a pasted statement, find a possible matching published fact-check, grade the retrieved evidence, expose escalation and adverse-event signals, and optionally generate an AI summary for analyst review.
 - **History:** review saved manual checks when Postgres is configured.
 
 ## Quick start

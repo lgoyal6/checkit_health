@@ -30,6 +30,7 @@ import storage
 from classifier import _classify_one, is_falsifiable
 from claim_report import generate_claim_report, ClaimReportResponse
 from fact_checker import check_claim
+from intelligence import add_monitor_signals, assess_claim
 
 # Rate-limit the LLM-backed endpoint so a bot can't burn the Gemini quota.
 limiter = Limiter(key_func=get_remote_address)
@@ -71,6 +72,7 @@ class CheckResponse(BaseModel):
     fact_check_source: Optional[str] = None
     fact_check_url: Optional[str] = None
     error: Optional[str] = None
+    assessment: Optional[Dict[str, Any]] = None
 
 
 def _genai_client() -> Any:
@@ -164,6 +166,12 @@ def check(request: Request, req: CheckRequest) -> CheckResponse:
             resp.fact_check_verdict = fc.get("verdict")
             resp.fact_check_source = fc.get("publisher")
             resp.fact_check_url = fc.get("url")
+        resp.assessment = assess_claim(
+            claim_text,
+            resp.confidence,
+            resp.fact_check_source,
+            resp.fact_check_url,
+        )
         _persist_check(text, resp)
     return resp
 
@@ -294,12 +302,13 @@ def monitor(
     if not storage.postgres_enabled():
         return []
     try:
-        return storage.fetch_trending(
+        rows = storage.fetch_trending(
             window=window,
             topic=topic or None,
             source=source or None,
             limit=max(1, min(limit, 200)),
         )
+        return add_monitor_signals(rows)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except Exception as e:

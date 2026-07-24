@@ -53,6 +53,7 @@ export default function VerdictCard({
   const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(
     `fact check ${claim || ""}`,
   )}`;
+  const assessment = result.assessment;
 
   return (
     <div
@@ -102,6 +103,54 @@ export default function VerdictCard({
           <span className="font-semibold not-italic text-slate-500">Why:</span>{" "}
           {reasoning}
         </p>
+      )}
+
+      {assessment && (
+        <section className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Analyst signals
+            </span>
+            <span className="rounded-full bg-white px-2 py-1 text-xs text-slate-600 ring-1 ring-slate-200">
+              Evidence: {assessment.evidence_quality.level}
+            </span>
+            <span className="rounded-full bg-white px-2 py-1 text-xs text-slate-600 ring-1 ring-slate-200">
+              Language: {assessment.language.name}
+            </span>
+            <span className="rounded-full bg-white px-2 py-1 text-xs text-slate-600 ring-1 ring-slate-200">
+              Cluster {assessment.cluster_id}
+            </span>
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-slate-600">
+            {assessment.evidence_quality.reason}
+          </p>
+          <p className="mt-2 text-xs font-medium text-slate-700">
+            Next step: {assessment.response_guidance}
+          </p>
+          {assessment.escalation.human_review_required && (
+            <p className="mt-2 rounded-md bg-amber-100 px-3 py-2 text-xs font-medium text-amber-900">
+              Human review recommended:{" "}
+              {assessment.escalation.reasons.join(", ")}.
+            </p>
+          )}
+          {assessment.adverse_event.detected && (
+            <p className="mt-2 text-xs text-rose-700">
+              Possible adverse-event language detected and routed for review.
+              This is not a diagnosis or emergency assessment.
+            </p>
+          )}
+          <details className="mt-3 text-xs text-slate-500">
+            <summary className="cursor-pointer font-medium text-slate-600">
+              Method and limitations
+            </summary>
+            <p className="mt-2 leading-relaxed">
+              Signals use deterministic rules around the disclosed AI
+              classification. Coordination is not inferred from a single post,
+              translation is not silently applied, and final judgment remains
+              with a qualified person.
+            </p>
+          </details>
+        </section>
       )}
 
       {label === "MEDICAL_CLAIM" && result.falsifiable === false && (
