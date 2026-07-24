@@ -45,6 +45,11 @@ def test_check_returns_classification_and_fact_check(monkeypatch):
         },
     )
     monkeypatch.setattr(api, "_persist_check", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        api,
+        "retrieve_evidence",
+        lambda *_args, **_kwargs: {"status": "ok", "evidence": [], "errors": []},
+    )
 
     response = TestClient(api.app).post("/check", json={"text": "Vitamin C cures cancer."})
 

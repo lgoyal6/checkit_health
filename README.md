@@ -19,6 +19,11 @@ Bluesky / Mastodon / YouTube / Reddit / file
 - **Monitor:** browse ranked social claims by topic, source, time window, engagement tier, normalized claim cluster, and growth velocity. **Check claim** sends any monitor row to the manual checker.
 - **Check:** classify a pasted statement, find a possible matching published fact-check, grade the retrieved evidence, expose escalation and adverse-event signals, and optionally generate an AI summary for analyst review.
 - **History:** review saved manual checks when Postgres is configured.
+- **Grounded evidence:** retrieve and rank ClaimReview, PubMed, and
+  ClinicalTrials.gov results; reports cite the exact returned passages or
+  explicitly return insufficient evidence.
+- **Analyst governance:** record human review state, notes, reviewer identity,
+  and an append-only audit trail.
 
 ## Quick start
 
@@ -123,10 +128,14 @@ python scripts/run.py --source reddit --subreddit conspiracy --reddit-limit 50
 | `GET /health` | Liveness check |
 | `GET /health/db` | Non-secret Postgres connectivity diagnostic |
 | `POST /check` | Classify one submitted statement |
+| `POST /jobs/check` | Queue claim processing and return a status URL |
+| `GET /jobs/{job_id}` | Read queued check status/result |
 | `POST /report` | Generate an AI analyst summary for a classified claim |
 | `GET /history` | Recent saved checks |
 | `GET /monitor` | Social claims ranked by reach |
 | `GET /stats` | Monitor aggregates |
+| `PATCH /claims/{post_id}/review` | Save an analyst decision and audit event |
+| `GET /claims/{post_id}/audit` | Read the review audit trail |
 
 `/monitor` accepts `window` (`24h`, `7d`, `30d`, or `all`), `topic`, `source`, and `limit`. `/monitor` and `/stats` exclude manual web checks.
 
@@ -147,6 +156,9 @@ npm run build
 ```
 
 CI runs these checks for pull requests and pushes to both `main` and `dev`. Scheduled ingestion runs every six hours. Bluesky is required; Mastodon and YouTube run when their corresponding repository secrets are configured.
+
+Evidence architecture, configuration, limitations, and evaluation are
+documented in [docs/EVIDENCE.md](docs/EVIDENCE.md).
 
 ## Deployment
 

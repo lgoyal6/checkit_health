@@ -163,6 +163,27 @@ def velocity(
     return {"reach": reach, "age_hours": hours, "interactions_per_hour": per_hour}
 
 
+def priority_score(
+    confidence: Optional[float],
+    reach: int,
+    adverse_event: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Explainable 0-100 review priority, never a truth or harm verdict."""
+    uncertainty = 1.0 - (confidence if confidence is not None else 0.5)
+    reach_signal = min(1.0, max(0, reach) / 10_000)
+    harm_signal = 1.0 if adverse_event and adverse_event.get("detected") else 0.25
+    score = round(100 * (0.45 * reach_signal + 0.35 * harm_signal + 0.2 * uncertainty))
+    return {
+        "score": score,
+        "components": {
+            "reach": round(reach_signal, 3),
+            "potential_harm": round(harm_signal, 3),
+            "uncertainty": round(uncertainty, 3),
+        },
+        "meaning": "review priority, not likelihood the claim is false",
+    }
+
+
 def assess_claim(
     text: str,
     confidence: Optional[float],
@@ -184,6 +205,7 @@ def assess_claim(
         "evidence_quality": evidence,
         "adverse_event": adverse,
         "escalation": escalation(confidence, reach, adverse),
+        "priority": priority_score(confidence, reach, adverse),
         "coordination_signal": {
             "status": "not_assessed",
             "reason": "A single claim is insufficient to infer coordinated behavior.",

@@ -50,6 +50,7 @@ export default function CheckPage() {
         topic: data.topic,
         factCheckVerdict: data.fact_check_verdict,
         factCheckSource: data.fact_check_source,
+        evidence: data.retrieval?.evidence || [],
       });
       setReport(rep);
     } catch (err) {

@@ -8,6 +8,7 @@ GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 # write claims here instead of the local SQLite file, so live web checks and
 # scheduled ingestion share one durable, deploy-proof store.
 DATABASE_URL = os.environ.get("DATABASE_URL")
+ANALYST_API_KEY = os.environ.get("ANALYST_API_KEY")
 
 # Bluesky monitoring source. Create an app password in Bluesky settings and set
 # these in the scheduler/backend environment.
@@ -58,6 +59,13 @@ GEMINI_TIMEOUT_MS = int(os.environ.get("GEMINI_TIMEOUT_MS", "60000"))
 # 60/min is just a conservative default to stay well within the daily quota.
 GEMINI_RPM = int(os.environ.get("GEMINI_RPM", "15"))
 FACT_CHECK_RPM = int(os.environ.get("FACT_CHECK_RPM", "60"))
+EVIDENCE_RETRIEVAL_ENABLED = os.environ.get(
+    "EVIDENCE_RETRIEVAL_ENABLED", "true"
+).lower() not in {"0", "false", "no"}
+EVIDENCE_CACHE_TTL_SECONDS = int(os.environ.get("EVIDENCE_CACHE_TTL_SECONDS", "21600"))
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "gemini-embedding-001")
+EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", "768"))
+BACKGROUND_WORKERS = int(os.environ.get("BACKGROUND_WORKERS", "4"))
 
 DEFAULT_INPUT_PATH = "data/posts.json"
 DEFAULT_OUTPUT_PATH = "output/claims.json"

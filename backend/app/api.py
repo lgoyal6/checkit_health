@@ -15,12 +15,15 @@ Endpoints:
 
 import hashlib
 import sqlite3
+import threading
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -30,10 +33,14 @@ import storage
 from classifier import _classify_one, is_falsifiable
 from claim_report import generate_claim_report, ClaimReportResponse
 from fact_checker import check_claim
-from intelligence import add_monitor_signals, assess_claim
+from evidence import retrieve_evidence
+from intelligence import adverse_event_routing, add_monitor_signals, assess_claim
 
 # Rate-limit the LLM-backed endpoint so a bot can't burn the Gemini quota.
 limiter = Limiter(key_func=get_remote_address)
+job_pool = ThreadPoolExecutor(max_workers=config.BACKGROUND_WORKERS)
+jobs: Dict[str, Dict[str, Any]] = {}
+jobs_lock = threading.Lock()
 
 app = FastAPI(title="Checkit Health Monitor API", version="1.0.0")
 app.state.limiter = limiter
@@ -59,6 +66,7 @@ class ReportRequest(BaseModel):
     topic: Optional[str] = None
     fact_check_verdict: Optional[str] = None
     fact_check_source: Optional[str] = None
+    evidence: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class CheckResponse(BaseModel):
@@ -73,6 +81,15 @@ class CheckResponse(BaseModel):
     fact_check_url: Optional[str] = None
     error: Optional[str] = None
     assessment: Optional[Dict[str, Any]] = None
+    retrieval: Optional[Dict[str, Any]] = None
+    evidence_state: Optional[str] = None
+    safety: Optional[Dict[str, Any]] = None
+
+
+class ReviewRequest(BaseModel):
+    status: str
+    note: str = ""
+    actor: str = "analyst"
 
 
 def _genai_client() -> Any:
@@ -130,7 +147,11 @@ def health_db() -> Dict[str, Any]:
 @app.post("/check", response_model=CheckResponse)
 @limiter.limit("20/minute")
 def check(request: Request, req: CheckRequest) -> CheckResponse:
-    text = (req.text or "").strip()
+    return _run_check(req.text)
+
+
+def _run_check(submitted_text: str) -> CheckResponse:
+    text = (submitted_text or "").strip()
     if not text:
         raise HTTPException(status_code=422, detail="text must not be empty")
     if not config.GOOGLE_API_KEY:
@@ -151,6 +172,7 @@ def check(request: Request, req: CheckRequest) -> CheckResponse:
         )
 
     resp = CheckResponse(**classification)
+    resp.safety = adverse_event_routing(text)
 
     # Only run the extra passes for real medical claims that clear the gate.
     is_claim = (
@@ -166,6 +188,10 @@ def check(request: Request, req: CheckRequest) -> CheckResponse:
             resp.fact_check_verdict = fc.get("verdict")
             resp.fact_check_source = fc.get("publisher")
             resp.fact_check_url = fc.get("url")
+        resp.retrieval = retrieve_evidence(claim_text, fact_check=fc)
+        resp.evidence_state = (
+            "retrieved" if resp.retrieval.get("evidence") else "insufficient"
+        )
         resp.assessment = assess_claim(
             claim_text,
             resp.confidence,
@@ -174,6 +200,44 @@ def check(request: Request, req: CheckRequest) -> CheckResponse:
         )
         _persist_check(text, resp)
     return resp
+
+
+def _execute_check_job(job_id: str, text: str) -> None:
+    with jobs_lock:
+        jobs[job_id] = {"id": job_id, "status": "running"}
+    try:
+        result = _run_check(text)
+        payload = {"id": job_id, "status": "completed", "result": result.model_dump()}
+    except HTTPException as exc:
+        payload = {
+            "id": job_id, "status": "failed",
+            "error": str(exc.detail), "status_code": exc.status_code,
+        }
+    except Exception:
+        payload = {"id": job_id, "status": "failed", "error": "processing_error"}
+    with jobs_lock:
+        jobs[job_id] = payload
+
+
+@app.post("/jobs/check", status_code=202)
+@limiter.limit("30/minute")
+def enqueue_check(request: Request, req: CheckRequest) -> Dict[str, Any]:
+    if not (req.text or "").strip():
+        raise HTTPException(status_code=422, detail="text must not be empty")
+    job_id = uuid.uuid4().hex
+    with jobs_lock:
+        jobs[job_id] = {"id": job_id, "status": "queued"}
+    job_pool.submit(_execute_check_job, job_id, req.text)
+    return {"id": job_id, "status": "queued", "status_url": f"/jobs/{job_id}"}
+
+
+@app.get("/jobs/{job_id}")
+def job_status(job_id: str) -> Dict[str, Any]:
+    with jobs_lock:
+        result = jobs.get(job_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return result
 
 
 def _persist_check(original_text: str, resp: CheckResponse) -> None:
@@ -205,6 +269,12 @@ def _persist_check(original_text: str, resp: CheckResponse) -> None:
         "fact_check_url": resp.fact_check_url,
         "source": "web",
         "classification_reasoning": resp.reasoning,
+        "review_status": "unreviewed",
+        "evidence_json": (
+            __import__("json").dumps(resp.retrieval.get("evidence", []))
+            if resp.retrieval else "[]"
+        ),
+        "evidence_state": resp.evidence_state or "insufficient",
     }
     try:
         storage.write_postgres([record])
@@ -238,6 +308,7 @@ def report(request: Request, req: ReportRequest) -> ClaimReportResponse:
             topic=req.topic,
             fact_check_verdict=req.fact_check_verdict,
             fact_check_source=req.fact_check_source,
+            evidence=req.evidence,
             max_attempts=2,
             initial_backoff=2,
         )
@@ -328,3 +399,29 @@ def stats(window: str = "7d") -> Dict[str, Any]:
     except Exception as e:
         print(f"[warn] postgres stats read failed: {e}")
         return {}
+
+
+def _authorize_analyst(request: Request) -> None:
+    if config.ANALYST_API_KEY and request.headers.get("x-analyst-key") != config.ANALYST_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid analyst credentials")
+
+
+@app.patch("/claims/{post_id}/review")
+def review_claim(post_id: str, req: ReviewRequest, request: Request) -> Dict[str, Any]:
+    _authorize_analyst(request)
+    if req.status not in {"unreviewed", "in_review", "accepted", "rejected", "needs_evidence"}:
+        raise HTTPException(status_code=422, detail="Invalid review status")
+    if not storage.postgres_enabled():
+        raise HTTPException(status_code=503, detail="Review workflow requires Postgres")
+    result = storage.update_review(post_id, req.status, req.note[:2000], req.actor[:120])
+    if not result:
+        raise HTTPException(status_code=404, detail="Claim not found")
+    return result
+
+
+@app.get("/claims/{post_id}/audit")
+def claim_audit(post_id: str, request: Request) -> List[Dict[str, Any]]:
+    _authorize_analyst(request)
+    if not storage.postgres_enabled():
+        return []
+    return storage.fetch_audit(post_id)

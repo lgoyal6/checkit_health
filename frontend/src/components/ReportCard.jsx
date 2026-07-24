@@ -51,6 +51,9 @@ export default function ReportCard({ report, loading, error, onRetry }) {
   if (!report) return null;
 
   const conf = CONFIDENCE[report.confidence_level] || CONFIDENCE.low;
+  const evidenceById = Object.fromEntries(
+    (report.evidence || []).map((item) => [item.id, item]),
+  );
 
   return (
     <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -80,6 +83,14 @@ export default function ReportCard({ report, loading, error, onRetry }) {
       </div>
 
       <div className="divide-y divide-slate-100">
+        <section className="p-5">
+          <h3 className="text-sm font-bold uppercase tracking-wide text-slate-800">
+            Evidence result
+          </h3>
+          <span className="mt-2 inline-block rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold capitalize text-slate-700">
+            {report.evidence_state?.replace("_", " ") || "insufficient"}
+          </span>
+        </section>
         {report.summary && (
           <section className="p-5">
             <h3 className="text-sm font-bold uppercase tracking-wide text-slate-800">
@@ -131,6 +142,38 @@ export default function ReportCard({ report, loading, error, onRetry }) {
             <p className="mt-2 text-sm leading-relaxed text-slate-700">
               {report.conclusion}
             </p>
+          </section>
+        )}
+        {report.citations?.length > 0 && (
+          <section className="p-5">
+            <h3 className="text-sm font-bold uppercase tracking-wide text-slate-800">
+              Sources cited
+            </h3>
+            <ul className="mt-3 space-y-3">
+              {report.citations.map((id) => {
+                const item = evidenceById[id];
+                if (!item) return null;
+                return (
+                  <li key={id} className="text-sm">
+                    <a
+                      href={item.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-blue-700 hover:underline"
+                    >
+                      {item.title}
+                    </a>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {item.publisher} · {item.published_at || "Date unavailable"} ·
+                      relevance {Math.round((item.relevance_score || 0) * 100)}%
+                    </p>
+                    <blockquote className="mt-1 border-l-2 border-slate-200 pl-3 text-xs text-slate-600">
+                      {item.passage}
+                    </blockquote>
+                  </li>
+                );
+              })}
+            </ul>
           </section>
         )}
       </div>

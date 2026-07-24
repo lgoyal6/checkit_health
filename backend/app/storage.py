@@ -13,8 +13,10 @@ _COLUMNS = (
     "post_id", "username", "text", "timestamp", "retweet_count", "like_count",
     "claim", "topic", "confidence", "timestamp_processed", "status",
     "fact_check_verdict", "fact_check_source", "fact_check_url", "source",
-    "classification_reasoning",
+    "classification_reasoning", "review_status", "review_note", "reviewer",
+    "reviewed_at", "evidence_json", "evidence_state",
 )
+_HUMAN_COLUMNS = {"review_status", "review_note", "reviewer", "reviewed_at"}
 
 
 SCHEMA = """
@@ -35,6 +37,23 @@ CREATE TABLE IF NOT EXISTS claims (
     fact_check_url TEXT,
     source TEXT DEFAULT 'file',
     classification_reasoning TEXT
+    ,review_status TEXT DEFAULT 'unreviewed'
+    ,review_note TEXT
+    ,reviewer TEXT
+    ,reviewed_at TEXT
+    ,evidence_json TEXT
+    ,evidence_state TEXT DEFAULT 'insufficient'
+);
+"""
+
+AUDIT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS claim_audit (
+    id INTEGER PRIMARY KEY,
+    post_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    note TEXT,
+    created_at TEXT NOT NULL
 );
 """
 
@@ -46,6 +65,12 @@ _MIGRATIONS = (
     "ALTER TABLE claims ADD COLUMN fact_check_url TEXT",
     "ALTER TABLE claims ADD COLUMN source TEXT DEFAULT 'file'",
     "ALTER TABLE claims ADD COLUMN classification_reasoning TEXT",
+    "ALTER TABLE claims ADD COLUMN review_status TEXT DEFAULT 'unreviewed'",
+    "ALTER TABLE claims ADD COLUMN review_note TEXT",
+    "ALTER TABLE claims ADD COLUMN reviewer TEXT",
+    "ALTER TABLE claims ADD COLUMN reviewed_at TEXT",
+    "ALTER TABLE claims ADD COLUMN evidence_json TEXT",
+    "ALTER TABLE claims ADD COLUMN evidence_state TEXT DEFAULT 'insufficient'",
 )
 
 
@@ -71,6 +96,8 @@ def build_records(filtered: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "fact_check_url": None,
             "source": post.get("source", "file"),
             "classification_reasoning": c.get("reasoning"),
+            "review_status": "unreviewed",
+            "evidence_state": "insufficient",
         })
     return records
 
@@ -88,6 +115,7 @@ def write_sqlite(records: List[Dict[str, Any]], db_path: str) -> None:
     conn = sqlite3.connect(db)
     try:
         conn.execute(SCHEMA)
+        conn.execute(AUDIT_SCHEMA)
         for stmt in _MIGRATIONS:
             try:
                 conn.execute(stmt)
@@ -95,16 +123,31 @@ def write_sqlite(records: List[Dict[str, Any]], db_path: str) -> None:
                 pass  # column already exists
         conn.executemany(
             """
-            INSERT OR REPLACE INTO claims
+            INSERT INTO claims
               (post_id, username, text, timestamp, retweet_count, like_count,
                claim, topic, confidence, timestamp_processed, status,
                fact_check_verdict, fact_check_source, fact_check_url, source,
-               classification_reasoning)
+               classification_reasoning, review_status, review_note, reviewer,
+               reviewed_at, evidence_json, evidence_state)
             VALUES
               (:post_id, :username, :text, :timestamp, :retweet_count, :like_count,
                :claim, :topic, :confidence, :timestamp_processed, :status,
                :fact_check_verdict, :fact_check_source, :fact_check_url, :source,
-               :classification_reasoning)
+               :classification_reasoning, :review_status, :review_note, :reviewer,
+               :reviewed_at, :evidence_json, :evidence_state)
+            ON CONFLICT(post_id) DO UPDATE SET
+              username=excluded.username, text=excluded.text,
+              timestamp=excluded.timestamp, retweet_count=excluded.retweet_count,
+              like_count=excluded.like_count, claim=excluded.claim,
+              topic=excluded.topic, confidence=excluded.confidence,
+              timestamp_processed=excluded.timestamp_processed,
+              status=excluded.status,
+              fact_check_verdict=excluded.fact_check_verdict,
+              fact_check_source=excluded.fact_check_source,
+              fact_check_url=excluded.fact_check_url, source=excluded.source,
+              classification_reasoning=excluded.classification_reasoning,
+              evidence_json=excluded.evidence_json,
+              evidence_state=excluded.evidence_state
             """,
             [{**{c: None for c in _COLUMNS}, **r} for r in records],
         )
@@ -137,6 +180,18 @@ def _ensure_postgres_schema(conn) -> None:
         cur.execute("ALTER TABLE claims ADD COLUMN IF NOT EXISTS fact_check_url TEXT")
         cur.execute("ALTER TABLE claims ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'file'")
         cur.execute("ALTER TABLE claims ADD COLUMN IF NOT EXISTS classification_reasoning TEXT")
+        cur.execute("ALTER TABLE claims ADD COLUMN IF NOT EXISTS review_status TEXT DEFAULT 'unreviewed'")
+        cur.execute("ALTER TABLE claims ADD COLUMN IF NOT EXISTS review_note TEXT")
+        cur.execute("ALTER TABLE claims ADD COLUMN IF NOT EXISTS reviewer TEXT")
+        cur.execute("ALTER TABLE claims ADD COLUMN IF NOT EXISTS reviewed_at TEXT")
+        cur.execute("ALTER TABLE claims ADD COLUMN IF NOT EXISTS evidence_json TEXT")
+        cur.execute("ALTER TABLE claims ADD COLUMN IF NOT EXISTS evidence_state TEXT DEFAULT 'insufficient'")
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS claim_audit (
+                id BIGSERIAL PRIMARY KEY, post_id TEXT NOT NULL, action TEXT NOT NULL,
+                actor TEXT NOT NULL, note TEXT, created_at TIMESTAMPTZ NOT NULL
+            )
+        """)
 
 
 def write_postgres(records: List[Dict[str, Any]]) -> None:
@@ -145,7 +200,11 @@ def write_postgres(records: List[Dict[str, Any]]) -> None:
         return
     cols = ", ".join(_COLUMNS)
     placeholders = ", ".join(f"%({c})s" for c in _COLUMNS)
-    updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in _COLUMNS if c != "post_id")
+    updates = ", ".join(
+        f"{c} = EXCLUDED.{c}"
+        for c in _COLUMNS
+        if c != "post_id" and c not in _HUMAN_COLUMNS
+    )
     sql = (
         f"INSERT INTO claims ({cols}) VALUES ({placeholders}) "
         f"ON CONFLICT (post_id) DO UPDATE SET {updates}"
@@ -166,7 +225,8 @@ def fetch_recent(limit: int = 50) -> List[Dict[str, Any]]:
     sql = (
         "SELECT post_id, username, text, timestamp, claim, topic, confidence, "
         "timestamp_processed, status, fact_check_verdict, fact_check_source, "
-        "fact_check_url, source, classification_reasoning FROM claims "
+        "fact_check_url, source, classification_reasoning, review_status, "
+        "review_note, reviewer, reviewed_at, evidence_json, evidence_state FROM claims "
         "ORDER BY timestamp_processed DESC LIMIT %s"
     )
     with psycopg.connect(config.DATABASE_URL, row_factory=dict_row) as conn:
@@ -234,7 +294,8 @@ def fetch_trending(
         "SELECT post_id, username, text, timestamp, retweet_count, like_count, "
         "claim, topic, confidence, timestamp_processed, status, "
         "fact_check_verdict, fact_check_source, fact_check_url, source, "
-        "classification_reasoning, "
+        "classification_reasoning, review_status, review_note, reviewer, "
+        "reviewed_at, evidence_json, evidence_state, "
         "(COALESCE(like_count, 0) + COALESCE(retweet_count, 0)) AS reach "
         "FROM claims "
         f"WHERE {' AND '.join(where)} "
@@ -312,3 +373,116 @@ def fetch_stats(window: str) -> Dict[str, Any]:
         "by_topic": _json_ready(by_topic),
         "by_source": _json_ready(by_source),
     }
+
+
+def update_review(post_id: str, status: str, note: str, actor: str) -> Dict[str, Any]:
+    """Mutate analyst review state and append an immutable audit event."""
+    import psycopg
+    from psycopg.rows import dict_row
+
+    now = datetime.now(timezone.utc).isoformat()
+    with psycopg.connect(config.DATABASE_URL, row_factory=dict_row) as conn:
+        _ensure_postgres_schema(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE claims SET review_status=%s, review_note=%s, reviewer=%s,
+                    reviewed_at=%s WHERE post_id=%s
+                RETURNING post_id, review_status, review_note, reviewer, reviewed_at
+                """,
+                (status, note, actor, now, post_id),
+            )
+            row = cur.fetchone()
+            if row:
+                cur.execute(
+                    "INSERT INTO claim_audit(post_id, action, actor, note, created_at) "
+                    "VALUES (%s, %s, %s, %s, %s)",
+                    (post_id, f"review:{status}", actor, note, now),
+                )
+        conn.commit()
+    return dict(row) if row else {}
+
+
+def fetch_audit(post_id: str) -> List[Dict[str, Any]]:
+    import psycopg
+    from psycopg.rows import dict_row
+
+    with psycopg.connect(config.DATABASE_URL, row_factory=dict_row) as conn:
+        _ensure_postgres_schema(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT action, actor, note, created_at FROM claim_audit "
+                "WHERE post_id=%s ORDER BY created_at DESC",
+                (post_id,),
+            )
+            return _json_ready(cur.fetchall())
+
+
+def _ensure_vector_schema(conn) -> None:
+    """Create the persistent evidence index when pgvector is available."""
+    with conn.cursor() as cur:
+        cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS evidence_chunks (
+                id TEXT PRIMARY KEY, title TEXT NOT NULL, passage TEXT NOT NULL,
+                url TEXT NOT NULL, publisher TEXT, source_type TEXT,
+                published_at TEXT, authority_score REAL, embedding vector({config.EMBEDDING_DIMENSIONS}),
+                indexed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS evidence_chunks_embedding_idx
+            ON evidence_chunks USING hnsw (embedding vector_cosine_ops)
+        """)
+
+
+def upsert_evidence(rows: List[Dict[str, Any]], embeddings: List[List[float]]) -> None:
+    from pgvector.psycopg import register_vector
+
+    with _connect_postgres() as conn:
+        _ensure_vector_schema(conn)
+        register_vector(conn)
+        with conn.cursor() as cur:
+            for row, embedding in zip(rows, embeddings):
+                if len(embedding) != config.EMBEDDING_DIMENSIONS:
+                    continue
+                cur.execute(
+                    """
+                    INSERT INTO evidence_chunks
+                      (id,title,passage,url,publisher,source_type,published_at,
+                       authority_score,embedding)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (id) DO UPDATE SET title=excluded.title,
+                      passage=excluded.passage, url=excluded.url,
+                      publisher=excluded.publisher, source_type=excluded.source_type,
+                      published_at=excluded.published_at,
+                      authority_score=excluded.authority_score,
+                      embedding=excluded.embedding, indexed_at=now()
+                    """,
+                    (
+                        row["id"], row["title"], row["passage"], row["url"],
+                        row.get("publisher"), row.get("source_type"),
+                        row.get("published_at"), row.get("authority_score"), embedding,
+                    ),
+                )
+        conn.commit()
+
+
+def search_evidence(embedding: List[float], limit: int = 8) -> List[Dict[str, Any]]:
+    import psycopg
+    from pgvector.psycopg import register_vector
+    from psycopg.rows import dict_row
+
+    with psycopg.connect(config.DATABASE_URL, row_factory=dict_row) as conn:
+        _ensure_vector_schema(conn)
+        register_vector(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id,title,passage,url,publisher,source_type,published_at,
+                  authority_score, 1 - (embedding <=> %s) AS relevance_score
+                FROM evidence_chunks ORDER BY embedding <=> %s LIMIT %s
+                """,
+                (embedding, embedding, limit),
+            )
+            return [dict(row) for row in cur.fetchall()]

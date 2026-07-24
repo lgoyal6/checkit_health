@@ -91,4 +91,7 @@ def check_claim(claim: str, api_key: Optional[str] = None) -> Optional[Dict[str,
         "publisher": publisher,
         "verdict": review.get("textualRating"),
         "url": review.get("url"),
+        "claim_text": best.get("text"),
+        "review_date": review.get("reviewDate"),
+        "match_score": round(best_score, 3),
     }

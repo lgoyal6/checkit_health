@@ -50,6 +50,7 @@ export async function getReport({
   topic,
   factCheckVerdict,
   factCheckSource,
+  evidence,
 }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 45000);
@@ -63,6 +64,7 @@ export async function getReport({
         topic: topic || null,
         fact_check_verdict: factCheckVerdict || null,
         fact_check_source: factCheckSource || null,
+        evidence: evidence || [],
       }),
       signal: controller.signal,
     });
@@ -113,5 +115,24 @@ export async function getStats(window = "7d") {
   const params = new URLSearchParams({ window });
   const res = await fetch(`${API_URL}/stats?${params.toString()}`);
   if (!res.ok) throw new Error(`Failed to load stats (${res.status})`);
+  return res.json();
+}
+
+export async function updateReview(postId, { status, note, actor, analystKey }) {
+  const res = await fetch(
+    `${API_URL}/claims/${encodeURIComponent(postId)}/review`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...(analystKey ? { "X-Analyst-Key": analystKey } : {}),
+      },
+      body: JSON.stringify({ status, note, actor }),
+    },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `Review update failed (${res.status})`);
+  }
   return res.json();
 }

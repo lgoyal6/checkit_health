@@ -24,5 +24,15 @@ services:
         sync: false
       - key: DATABASE_URL
         sync: false
+      - key: ANALYST_API_KEY
+        generateValue: true
+      - key: EVIDENCE_RETRIEVAL_ENABLED
+        value: "true"
+      - key: EMBEDDING_MODEL
+        value: gemini-embedding-001
+      - key: EMBEDDING_DIMENSIONS
+        value: "768"
+      - key: BACKGROUND_WORKERS
+        value: "4"
       - key: PYTHON_VERSION
         value: "3.11.9"

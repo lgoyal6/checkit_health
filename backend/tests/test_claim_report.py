@@ -53,7 +53,13 @@ def test_generate_report_returns_a_structured_response():
         }
     )
 
-    report = generate_claim_report(_FakeClient(text=payload), claim_text="X cures Y")
+    evidence = [{
+        "id": "pubmed:1", "title": "Study", "passage": "Result",
+        "url": "https://example.test", "publisher": "Journal",
+    }]
+    report = generate_claim_report(
+        _FakeClient(text=payload), claim_text="X cures Y", evidence=evidence
+    )
 
     assert report.rumor == "Does X cure Y?"
     assert report.confidence_level == "high"
@@ -64,4 +70,15 @@ def test_generate_report_raises_after_exhausting_retries():
     client = _FakeClient(exc=RuntimeError("429 RESOURCE_EXHAUSTED"))
 
     with pytest.raises(Exception):
-        generate_claim_report(client, claim_text="X cures Y", max_attempts=1)
+        generate_claim_report(
+            client,
+            claim_text="X cures Y",
+            evidence=[{"id": "x", "title": "x", "passage": "x"}],
+            max_attempts=1,
+        )
+
+
+def test_generate_report_refuses_to_generate_without_evidence():
+    report = generate_claim_report(_FakeClient(text="unused"), claim_text="X cures Y")
+    assert report.evidence_state == "insufficient"
+    assert report.citations == []

@@ -153,6 +153,25 @@ export default function VerdictCard({
         </section>
       )}
 
+      {result.retrieval && (
+        <section className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-blue-800">
+            Evidence retrieval
+          </p>
+          <p className="mt-1 text-sm text-slate-700">
+            {result.retrieval.evidence?.length || 0} source passages retrieved
+            {result.retrieval.cached ? " from cache" : ""}. Status:{" "}
+            {result.retrieval.status.replace("_", " ")}.
+          </p>
+          {result.retrieval.errors?.length > 0 && (
+            <p className="mt-1 text-xs text-amber-800">
+              Some sources were temporarily unavailable; conclusions remain
+              conservative.
+            </p>
+          )}
+        </section>
+      )}
+
       {label === "MEDICAL_CLAIM" && result.falsifiable === false && (
         <p className="mt-3 text-sm text-amber-700">
           This reads more like an opinion than a checkable claim.

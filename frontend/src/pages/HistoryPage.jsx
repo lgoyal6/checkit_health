@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { getHistory } from "../api.js";
+import { getHistory, updateReview } from "../api.js";
 import { truthVerdict } from "../verdict.js";
 
 function formatDate(iso) {
@@ -21,6 +21,32 @@ export default function HistoryPage() {
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("all");
   const [expanded, setExpanded] = useState(null);
+  const [reviewDraft, setReviewDraft] = useState({});
+  const [analystKey, setAnalystKey] = useState("");
+  const [saving, setSaving] = useState("");
+
+  async function saveReview(row) {
+    const draft = reviewDraft[row.post_id] || {};
+    setSaving(row.post_id);
+    setError("");
+    try {
+      const updated = await updateReview(row.post_id, {
+        status: draft.status || row.review_status || "in_review",
+        note: draft.note ?? row.review_note ?? "",
+        actor: draft.actor || "analyst",
+        analystKey,
+      });
+      setRows((current) =>
+        current.map((item) =>
+          item.post_id === row.post_id ? { ...item, ...updated } : item,
+        ),
+      );
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving("");
+    }
+  }
 
   useEffect(() => {
     getHistory()
@@ -162,6 +188,59 @@ export default function HistoryPage() {
                               Read the full fact check →
                             </a>
                           )}
+                          <div className="mt-4 grid gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-2">
+                            <label className="text-xs font-semibold text-slate-600">
+                              Human review status
+                              <select
+                                value={reviewDraft[r.post_id]?.status || r.review_status || "unreviewed"}
+                                onChange={(e) =>
+                                  setReviewDraft((all) => ({
+                                    ...all,
+                                    [r.post_id]: { ...all[r.post_id], status: e.target.value },
+                                  }))
+                                }
+                                className="mt-1 block w-full rounded border border-slate-300 p-2 text-sm"
+                              >
+                                <option value="unreviewed">Unreviewed</option>
+                                <option value="in_review">In review</option>
+                                <option value="accepted">Accepted</option>
+                                <option value="rejected">Rejected</option>
+                                <option value="needs_evidence">Needs evidence</option>
+                              </select>
+                            </label>
+                            <label className="text-xs font-semibold text-slate-600">
+                              Analyst key
+                              <input
+                                type="password"
+                                value={analystKey}
+                                onChange={(e) => setAnalystKey(e.target.value)}
+                                className="mt-1 block w-full rounded border border-slate-300 p-2 text-sm"
+                                placeholder="Required when configured"
+                              />
+                            </label>
+                            <label className="text-xs font-semibold text-slate-600 sm:col-span-2">
+                              Review note
+                              <textarea
+                                value={reviewDraft[r.post_id]?.note ?? r.review_note ?? ""}
+                                onChange={(e) =>
+                                  setReviewDraft((all) => ({
+                                    ...all,
+                                    [r.post_id]: { ...all[r.post_id], note: e.target.value },
+                                  }))
+                                }
+                                className="mt-1 block w-full rounded border border-slate-300 p-2 text-sm"
+                                rows={2}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              disabled={saving === r.post_id}
+                              onClick={() => saveReview(r)}
+                              className="rounded bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                            >
+                              {saving === r.post_id ? "Saving…" : "Save review"}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )}

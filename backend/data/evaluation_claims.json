@@ -1,0 +1,14 @@
+[
+  {"id":"vaccine-autism","claim":"The MMR vaccine causes autism.","expected_state":"contradicted","relevant_source_types":["peer_reviewed_study","published_fact_check"]},
+  {"id":"ivermectin-covid","claim":"Ivermectin cures COVID-19.","expected_state":"contradicted","relevant_source_types":["peer_reviewed_study","published_fact_check"]},
+  {"id":"antibiotics-virus","claim":"Antibiotics cure viral infections.","expected_state":"contradicted","relevant_source_types":["peer_reviewed_study","published_fact_check"]},
+  {"id":"smoking-cancer","claim":"Smoking increases lung cancer risk.","expected_state":"supported","relevant_source_types":["peer_reviewed_study"]},
+  {"id":"exercise-heart","claim":"Regular exercise reduces cardiovascular disease risk.","expected_state":"supported","relevant_source_types":["peer_reviewed_study"]},
+  {"id":"celery-arthritis","claim":"Celery juice reverses arthritis.","expected_state":"insufficient","relevant_source_types":["peer_reviewed_study"]},
+  {"id":"detox-toxins","claim":"A three-day juice cleanse removes toxins from the liver.","expected_state":"insufficient","relevant_source_types":["peer_reviewed_study"]},
+  {"id":"insulin-diabetes","claim":"Insulin is an effective treatment for type 1 diabetes.","expected_state":"supported","relevant_source_types":["peer_reviewed_study"]},
+  {"id":"5g-covid","claim":"5G towers spread COVID-19.","expected_state":"contradicted","relevant_source_types":["published_fact_check"]},
+  {"id":"personal-story","claim":"I felt tired after my vaccination.","expected_state":"not_applicable","relevant_source_types":[]},
+  {"id":"new-supplement","claim":"Supplement ZX-91 doubles human lifespan.","expected_state":"insufficient","relevant_source_types":["clinical_trial_registry","peer_reviewed_study"]},
+  {"id":"mixed-nutrition","claim":"Coffee is always good for every person's health.","expected_state":"mixed","relevant_source_types":["peer_reviewed_study"]}
+]
