@@ -486,3 +486,23 @@ def search_evidence(embedding: List[float], limit: int = 8) -> List[Dict[str, An
                 (embedding, embedding, limit),
             )
             return [dict(row) for row in cur.fetchall()]
+
+
+def vector_health() -> Dict[str, Any]:
+    import psycopg
+
+    with psycopg.connect(config.DATABASE_URL) as conn:
+        _ensure_vector_schema(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT extversion FROM pg_extension WHERE extname = 'vector'"
+            )
+            version = cur.fetchone()
+            cur.execute("SELECT COUNT(*) FROM evidence_chunks")
+            count = cur.fetchone()
+    return {
+        "ok": True,
+        "extension_version": version[0] if version else None,
+        "dimensions": config.EMBEDDING_DIMENSIONS,
+        "evidence_chunks": count[0] if count else 0,
+    }

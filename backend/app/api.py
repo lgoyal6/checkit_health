@@ -144,6 +144,21 @@ def health_db() -> Dict[str, Any]:
         }
 
 
+@app.get("/health/vector")
+def health_vector() -> Dict[str, Any]:
+    if not storage.postgres_enabled():
+        return {"postgres_configured": False, "ok": False}
+    try:
+        return storage.vector_health()
+    except Exception as e:
+        return {
+            "postgres_configured": True,
+            "ok": False,
+            "error": type(e).__name__,
+            "detail": str(e)[:300],
+        }
+
+
 @app.post("/check", response_model=CheckResponse)
 @limiter.limit("20/minute")
 def check(request: Request, req: CheckRequest) -> CheckResponse:
