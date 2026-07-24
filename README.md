@@ -4,7 +4,7 @@ Checkit Health is a prototype for monitoring health misinformation on public soc
 
 > **Important:** This is an analyst-support and research prototype, not medical advice or an automated truth service. AI-generated classifications and summaries can be wrong. Review any linked, published fact-check and its sources before acting on a claim.
 
-**Live demo:** https://checkit-health-s9p4.vercel.app<br>
+**Live demo:** https://frontend-kappa-blue-61.vercel.app<br>
 **API:** https://checkit-health-api.onrender.com
 
 ## What it does
@@ -17,13 +17,32 @@ Bluesky / Mastodon / YouTube / Reddit / file
 ```
 
 - **Monitor:** browse ranked social claims by topic, source, time window, engagement tier, normalized claim cluster, and growth velocity. **Check claim** sends any monitor row to the manual checker.
-- **Check:** classify a pasted statement, find a possible matching published fact-check, grade the retrieved evidence, expose escalation and adverse-event signals, and optionally generate an AI summary for analyst review.
-- **History:** review saved manual checks when Postgres is configured.
+- **Check:** classify a pasted statement, retrieve medical evidence, show retrieval
+  status, and produce a citation-grounded report. The report displays its
+  evidence state, linked sources, publication metadata, relevance scores, and
+  the exact retrieved passages used by the model.
+- **History:** review saved manual checks, assign a human review state, and save
+  analyst notes when Postgres is configured. Review mutations can be protected
+  with `ANALYST_API_KEY`.
 - **Grounded evidence:** retrieve and rank ClaimReview, PubMed, and
   ClinicalTrials.gov results; reports cite the exact returned passages or
   explicitly return insufficient evidence.
 - **Analyst governance:** record human review state, notes, reviewer identity,
   and an append-only audit trail.
+
+### What changed in the interface
+
+- The claim result shows whether evidence retrieval succeeded, how many source
+  passages were found, whether the cache was used, and whether any source was
+  temporarily unavailable.
+- Evidence reports now use the explicit states `supported`, `contradicted`,
+  `mixed`, `insufficient`, and `not applicable`.
+- Every cited source is shown with a link, publisher, publication date,
+  relevance score, and retrieved passage.
+- History details include controls for `unreviewed`, `in review`, `accepted`,
+  `rejected`, and `needs evidence`, plus an analyst note field.
+- Safety, escalation, clustering, evidence quality, and explainable review
+  priority remain visible as analyst-support signals.
 
 ## Quick start
 
@@ -72,6 +91,10 @@ The frontend defaults to `http://localhost:8000`. Set `VITE_API_URL` in `fronten
 ```bash
 export GOOGLE_FACT_CHECK_KEY=...       # Enables existing fact-check lookup
 export DATABASE_URL=postgresql://...   # Durable production storage
+export ANALYST_API_KEY=...             # Protects review and audit endpoints
+export EVIDENCE_RETRIEVAL_ENABLED=true
+export EMBEDDING_MODEL=gemini-embedding-001
+export EMBEDDING_DIMENSIONS=768
 export BLUESKY_IDENTIFIER=...
 export BLUESKY_APP_PASSWORD=...
 export MASTODON_ACCESS_TOKEN=...
@@ -80,6 +103,11 @@ export YOUTUBE_API_KEY=...
 ```
 
 Without `DATABASE_URL`, the CLI writes SQLite and JSON locally. The Monitor endpoint is intentionally Postgres-only, so it returns no rows in SQLite-only mode.
+
+When `GOOGLE_API_KEY` and `DATABASE_URL` are available, evidence is embedded
+with Gemini and stored in a pgvector HNSW index. Without either service, the
+retriever falls back safely and never treats a retrieval failure as evidence
+that a claim is true or false.
 
 ## Project layout
 
