@@ -23,6 +23,7 @@ import config
 
 PUBMED_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
 PUBMED_SUMMARY_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+PUBMED_FETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 TRIALS_URL = "https://clinicaltrials.gov/api/v2/studies"
 TIMEOUT = 8
 _CACHE: Dict[str, tuple[float, List[Dict[str, Any]]]] = {}
@@ -122,16 +123,40 @@ def retrieve_pubmed(claim: str, limit: int = 5) -> List[Evidence]:
     )
     summary.raise_for_status()
     result = summary.json().get("result", {})
+    abstracts: Dict[str, str] = {}
+    try:
+        fetched = requests.get(
+            PUBMED_FETCH_URL,
+            params={"db": "pubmed", "id": ",".join(ids), "retmode": "xml"},
+            timeout=TIMEOUT,
+        )
+        fetched.raise_for_status()
+        root = ElementTree.fromstring(fetched.text)
+        for article in root.findall(".//PubmedArticle"):
+            pmid = _safe_text(article.findtext(".//PMID"))
+            sections = [
+                "".join(node.itertext()).strip()
+                for node in article.findall(".//Abstract/AbstractText")
+            ]
+            if pmid and sections:
+                abstracts[pmid] = " ".join(section for section in sections if section)
+    except (requests.RequestException, ElementTree.ParseError):
+        pass
     rows = []
     for pmid in ids:
         item = result.get(pmid) or {}
         title = _safe_text(item.get("title"))
         authors = item.get("authors") or []
         author_names = ", ".join(a.get("name", "") for a in authors[:3])
+        abstract = abstracts.get(pmid)
         rows.append(Evidence(
             id=f"pubmed:{pmid}",
             title=title,
-            passage=f"{title} Authors: {author_names}".strip(),
+            passage=(
+                abstract[:1800]
+                if abstract
+                else f"{title} Authors: {author_names}".strip()
+            ),
             url=f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
             publisher=_safe_text(item.get("fulljournalname")) or "PubMed",
             source_type="peer_reviewed_study",

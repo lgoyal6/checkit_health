@@ -480,8 +480,8 @@ def search_evidence(embedding: List[float], limit: int = 8) -> List[Dict[str, An
             cur.execute(
                 """
                 SELECT id,title,passage,url,publisher,source_type,published_at,
-                  authority_score, 1 - (embedding <=> %s) AS relevance_score
-                FROM evidence_chunks ORDER BY embedding <=> %s LIMIT %s
+                  authority_score, 1 - (embedding <=> %s::vector) AS relevance_score
+                FROM evidence_chunks ORDER BY embedding <=> %s::vector LIMIT %s
                 """,
                 (embedding, embedding, limit),
             )
