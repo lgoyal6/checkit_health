@@ -4,7 +4,7 @@
 
 Checkit Health helps an analyst notice potentially harmful health claims that
 are gaining reach on public social platforms. It is a monitoring and triage
-tool—not a medical authority, automated moderation system, or substitute for
+tool - not a medical authority, automated moderation system, or substitute for
 clinical advice.
 
 The app answers three practical questions:

@@ -49,7 +49,7 @@ Bluesky / Mastodon / YouTube / Reddit / file
 Requirements: Python 3.11+ and a Gemini API key. Node 20+ is needed for the frontend.
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/lgoyal6/checkit_health.git
 cd checkit_health/backend
 python -m venv .venv
 source .venv/bin/activate
