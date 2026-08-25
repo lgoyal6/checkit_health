@@ -44,6 +44,41 @@ Bluesky / Mastodon / YouTube / Reddit / file
 - Safety, escalation, clustering, evidence quality, and explainable review
   priority remain visible as analyst-support signals.
 
+## How a post becomes a claim
+
+Every stage below can drop a post, and the two model gates are deliberately tuned to
+fail in opposite directions.
+
+```mermaid
+flowchart TD
+  CRON["GitHub Actions, every 6 hours:<br/>runs this same CLI with DATABASE_URL set"] --> SRC
+  SRC["--source bluesky, mastodon or youtube, over the 8<br/>MONITOR_QUERIES unless --query is given.<br/>Or reddit, or a JSON/CSV file"] --> RANK["sort by like_count + retweet_count, then --limit"]
+  RANK --> KW{"prefilter: one word-boundary regex<br/>over 114 health keywords"}
+  KW -->|no keyword| DROP["dropped"]
+  KW -->|hit| GEM["Gemini 2.5 Flash Lite triage in JSON mode.<br/>15 rpm limiter, 5s pause between posts,<br/>every result appended to checkpoint.json so a re-run resumes"]
+  GEM -->|error, after retrying rate limits| ERR["recorded as NOISE with the error text, dropped"]
+  GEM --> G1{"label MEDICAL_CLAIM<br/>and confidence >= 0.7?"}
+  G1 -->|no| DROP
+  G1 -->|yes| G2{"second Gemini call:<br/>is the claim falsifiable?"}
+  G2 -->|no| DROP
+  G2 -->|yes, or the call errored| KEEP["kept: this gate fails open on purpose"]
+  KEEP --> FC{"Google Fact Check search: does the best<br/>ClaimReview hit share at least half<br/>of the claim's keywords?"}
+  FC -->|yes| VER["status verified, publisher, rating and URL attached"]
+  FC -->|no key, no hit, or a loose hit| UNV["status unverified"]
+  VER --> UP["upsert by post_id"]
+  UNV --> UP
+  UP --> J["output/claims.json"]
+  UP --> SQ["db/claims.db"]
+  UP --> PG["Postgres, only when DATABASE_URL is set"]
+  PG --> API["FastAPI. /monitor, /stats and /history read Postgres only"]
+```
+
+A classification that errors out is stored as `NOISE` and dropped, while a falsifiability
+call that errors returns true and the claim survives; a borderline claim reaching an
+analyst is cheaper than silently losing a real one. The keyword-overlap threshold on the
+fact-check step is there because Google's ClaimReview search matches loosely, so without
+it a claim can pick up an unrelated verdict.
+
 ## Quick start
 
 Requirements: Python 3.11+ and a Gemini API key. Node 20+ is needed for the frontend.
