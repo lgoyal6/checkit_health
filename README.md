@@ -4,7 +4,7 @@ Checkit Health is a prototype for monitoring health misinformation on public soc
 
 > **Important:** This is an analyst-support and research prototype, not medical advice or an automated truth service. AI-generated classifications and summaries can be wrong. Review any linked, published fact-check and its sources before acting on a claim.
 
-**Live demo:** https://frontend-kappa-blue-61.vercel.app<br>
+**Live demo:** https://checkit-health-s9p4.vercel.app<br>
 **API:** https://checkit-health-api.onrender.com
 
 ## What it does
