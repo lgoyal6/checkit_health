@@ -375,12 +375,64 @@ def fetch_stats(window: str) -> Dict[str, Any]:
     }
 
 
+def _sqlite_conn():
+    db = Path(config.DEFAULT_DB_PATH)
+    db.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    conn.execute(SCHEMA)
+    conn.execute(AUDIT_SCHEMA)
+    for stmt in _MIGRATIONS:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError:
+            pass  # column already exists
+    return conn
+
+
+def _update_review_sqlite(
+    post_id: str, status: str, note: str, actor: str, now: str
+) -> Dict[str, Any]:
+    """Review on the local backend.
+
+    Analyst decisions are the training signal for retuning the priority
+    weights, so a review path that only exists on Postgres means the feedback
+    loop collects nothing during local development or a demo.
+    """
+    conn = _sqlite_conn()
+    try:
+        cur = conn.execute(
+            "UPDATE claims SET review_status=?, review_note=?, reviewer=?, "
+            "reviewed_at=? WHERE post_id=?",
+            (status, note, actor, now, post_id),
+        )
+        if not cur.rowcount:
+            return {}
+        conn.execute(
+            "INSERT INTO claim_audit(post_id, action, actor, note, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (post_id, f"review:{status}", actor, note, now),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT post_id, review_status, review_note, reviewer, reviewed_at "
+            "FROM claims WHERE post_id=?",
+            (post_id,),
+        ).fetchone()
+        return dict(row) if row else {}
+    finally:
+        conn.close()
+
+
 def update_review(post_id: str, status: str, note: str, actor: str) -> Dict[str, Any]:
     """Mutate analyst review state and append an immutable audit event."""
+    now = datetime.now(timezone.utc).isoformat()
+    if not postgres_enabled():
+        return _update_review_sqlite(post_id, status, note, actor, now)
+
     import psycopg
     from psycopg.rows import dict_row
 
-    now = datetime.now(timezone.utc).isoformat()
     with psycopg.connect(config.DATABASE_URL, row_factory=dict_row) as conn:
         _ensure_postgres_schema(conn)
         with conn.cursor() as cur:
@@ -404,6 +456,18 @@ def update_review(post_id: str, status: str, note: str, actor: str) -> Dict[str,
 
 
 def fetch_audit(post_id: str) -> List[Dict[str, Any]]:
+    if not postgres_enabled():
+        conn = _sqlite_conn()
+        try:
+            rows = conn.execute(
+                "SELECT action, actor, note, created_at FROM claim_audit "
+                "WHERE post_id=? ORDER BY created_at DESC",
+                (post_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
     import psycopg
     from psycopg.rows import dict_row
 
@@ -506,3 +570,42 @@ def vector_health() -> Dict[str, Any]:
         "dimensions": config.EMBEDDING_DIMENSIONS,
         "evidence_chunks": count[0] if count else 0,
     }
+
+
+def record_audit(post_id: str, action: str, actor: str, note: str = "") -> bool:
+    """Append one audit event. Works on either backend, never raises upward.
+
+    Response drafting and approval are governance events, so they belong in the
+    same append-only trail as review decisions rather than in a separate log.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    row = (post_id, action, actor, note[:2000], now)
+    try:
+        if postgres_enabled():
+            with _connect_postgres() as conn:
+                _ensure_postgres_schema(conn)
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO claim_audit(post_id, action, actor, note, "
+                        "created_at) VALUES (%s, %s, %s, %s, %s)",
+                        row,
+                    )
+                conn.commit()
+            return True
+        db = Path(config.DEFAULT_DB_PATH)
+        db.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(db)
+        try:
+            conn.execute(AUDIT_SCHEMA)
+            conn.execute(
+                "INSERT INTO claim_audit(post_id, action, actor, note, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                row,
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return True
+    except Exception as e:  # pragma: no cover - audit must never break a request
+        print(f"[warn] audit write failed: {e}")
+        return False
