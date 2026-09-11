@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { getStats, getTrending } from "../api.js";
+import { Link, useNavigate } from "react-router-dom";
+import { exportUrl, getStats, getTrending, updateReview } from "../api.js";
+import { PriorityMeter, ReviewButtons } from "../components/Signals.jsx";
 import { truthVerdict } from "../verdict.js";
 
 const WINDOWS = [
@@ -65,6 +66,7 @@ function reach(row) {
 // the default and also what tiers are bucketed by; the others just reorder
 // the same rows by a different engagement signal.
 const SORT_OPTIONS = [
+  ["priority", "Review priority"],
   ["reach", "Reach (likes + reposts)"],
   ["likes", "Likes"],
   ["reposts", "Reposts"],
@@ -74,6 +76,8 @@ const SORT_OPTIONS = [
 
 function metricValue(row, sortBy) {
   switch (sortBy) {
+    case "priority":
+      return Number(row.priority?.score || 0);
     case "likes":
       return Number(row.like_count || 0);
     case "reposts":
@@ -153,7 +157,15 @@ function StatCard({ label, value, sub }) {
   );
 }
 
-function ClaimTable({ rows, sortBy, expanded, setExpanded, onCheckClaim }) {
+function ClaimTable({
+  rows,
+  sortBy,
+  expanded,
+  setExpanded,
+  onCheckClaim,
+  onReview,
+  savingPost,
+}) {
   if (rows.length === 0) {
     return (
       <p className="px-4 py-6 text-sm text-slate-500">
@@ -170,6 +182,7 @@ function ClaimTable({ rows, sortBy, expanded, setExpanded, onCheckClaim }) {
         <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-4 py-3">Claim</th>
+            <th className="px-4 py-3">Priority</th>
             <th className="px-4 py-3">Topic</th>
             <th className="px-4 py-3">Reach</th>
             <th className="px-4 py-3">Verdict</th>
@@ -191,6 +204,9 @@ function ClaimTable({ rows, sortBy, expanded, setExpanded, onCheckClaim }) {
                     <div className="mt-1 truncate text-xs text-slate-500">
                       @{row.username || "unknown"}
                     </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <PriorityMeter priority={row.priority} compact />
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {row.topic || "-"}
@@ -227,8 +243,11 @@ function ClaimTable({ rows, sortBy, expanded, setExpanded, onCheckClaim }) {
                   </td>
                 </tr>
                 {isOpen && (
-                  <tr id={`claim-details-${row.post_id}`} className="bg-slate-50">
-                    <td colSpan={7} className="px-4 py-4">
+                  <tr
+                    id={`claim-details-${row.post_id}`}
+                    className="bg-slate-50"
+                  >
+                    <td colSpan={8} className="px-4 py-4">
                       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -267,7 +286,33 @@ function ClaimTable({ rows, sortBy, expanded, setExpanded, onCheckClaim }) {
                           )}
                         </div>
                         <div className="rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-600">
-                          <div className="flex justify-between gap-4">
+                          <PriorityMeter priority={row.priority} />
+                          <div className="mt-3 border-t border-slate-100 pt-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Your call
+                            </p>
+                            <div className="mt-2">
+                              <ReviewButtons
+                                value={row.review_status}
+                                busy={savingPost === row.post_id}
+                                onChoose={(status) => onReview(row, status)}
+                              />
+                            </div>
+                            <p className="mt-2 text-xs text-slate-400">
+                              Recorded against this claim&apos;s stored triage
+                              score, which is what lets the ranking be retuned
+                              against real decisions.
+                            </p>
+                          </div>
+                          {row.narrative_id && (
+                            <Link
+                              to={`/narratives/${encodeURIComponent(row.narrative_id)}`}
+                              className="mt-3 inline-block border-t border-slate-100 pt-3 text-xs font-medium text-blue-600 hover:underline"
+                            >
+                              Open the narrative this belongs to
+                            </Link>
+                          )}
+                          <div className="mt-3 flex justify-between gap-4 border-t border-slate-100 pt-3">
                             <span>Likes</span>
                             <span className="font-semibold tabular-nums text-slate-900">
                               {formatNumber(row.like_count)}
@@ -313,7 +358,34 @@ export default function MonitorPage() {
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState(null);
   const [activeTier, setActiveTier] = useState("viral");
-  const [sortBy, setSortBy] = useState("reach");
+  const [sortBy, setSortBy] = useState("priority");
+  const [savingPost, setSavingPost] = useState("");
+  const [analystKey, setAnalystKey] = useState("");
+
+  // Triage from the page that ranks claims. Review used to live only on
+  // History, which reads the last 50 rows, so decisions were never recorded
+  // where the volume actually is.
+  async function review(row, status) {
+    setSavingPost(row.post_id);
+    setError("");
+    try {
+      const updated = await updateReview(row.post_id, {
+        status,
+        note: "",
+        actor: "analyst",
+        analystKey,
+      });
+      setRows((current) =>
+        current.map((item) =>
+          item.post_id === row.post_id ? { ...item, ...updated } : item,
+        ),
+      );
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingPost("");
+    }
+  }
 
   function checkMonitoredClaim(row) {
     navigate("/check", {
@@ -379,12 +451,24 @@ export default function MonitorPage() {
             Viral health misinformation monitor
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-slate-600">
-            Ranked social health claims from monitored sources, split by
-            engagement tier.
+            Individual posts from monitored sources, ranked by review priority.
+            To work by rumor instead of by post, use the{" "}
+            <Link to="/" className="font-medium text-blue-600 hover:underline">
+              narrative queue
+            </Link>
+            .
           </p>
         </div>
-        <div className="text-sm text-slate-500" aria-live="polite">
-          {visible.length} claims shown
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-slate-500" aria-live="polite">
+            {visible.length} claims shown
+          </span>
+          <a
+            href={exportUrl("claims", { window, topic, source })}
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            Export CSV
+          </a>
         </div>
       </div>
 
@@ -547,9 +631,28 @@ export default function MonitorPage() {
             expanded={expanded}
             setExpanded={setExpanded}
             onCheckClaim={checkMonitoredClaim}
+            onReview={review}
+            savingPost={savingPost}
           />
         </div>
       )}
+
+      <details className="mt-8 text-xs text-slate-500">
+        <summary className="cursor-pointer font-medium text-slate-600">
+          Analyst key
+        </summary>
+        <p className="mt-2">
+          Required only when the deployment sets <code>ANALYST_API_KEY</code>.
+          Stored in this tab only.
+        </p>
+        <input
+          type="password"
+          value={analystKey}
+          onChange={(e) => setAnalystKey(e.target.value)}
+          placeholder="Analyst key"
+          className="mt-2 rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
+      </details>
     </div>
   );
 }
