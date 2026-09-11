@@ -10,6 +10,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Optional
 
+import config
+
 
 ADVERSE_EVENT_TERMS = {
     "adverse reaction", "allergic reaction", "anaphylaxis", "bleeding",
@@ -51,8 +53,16 @@ def normalize_claim(text: str) -> str:
 
 
 def cluster_id(text: str) -> str:
+    """Deprecated lexical signature; kept only as an offline fallback id.
+
+    This groups two claims only when their normalized word *sets* match
+    exactly, so "Ivermectin cures COVID" and "Ivermectin is a cure for
+    COVID-19" land in different buckets. Measured on the bundled corpus it
+    produced 33 distinct clusters from 34 claims. Real grouping lives in
+    ``narratives.py``; this remains so a row with no narrative assignment
+    still has a stable identifier.
+    """
     normalized = normalize_claim(text)
-    # Sorting makes small wording changes more likely to share a cluster.
     signature = " ".join(sorted(set(normalized.split())))
     return hashlib.sha256(signature.encode()).hexdigest()[:12]
 
@@ -135,17 +145,17 @@ def escalation(
     if adverse_event and adverse_event.get("route") == "urgent_human_review":
         reasons.append("urgent symptom language")
         severity = "critical"
-    if reach >= 10_000:
+    if reach >= config.ESCALATION_REACH:
         reasons.append("high reach")
         severity = "high" if severity == "routine" else severity
-    if confidence is not None and confidence < 0.8:
+    if confidence is not None and confidence < config.ESCALATION_CONFIDENCE:
         reasons.append("model uncertainty")
         severity = "review" if severity == "routine" else severity
     return {
         "severity": severity,
         "human_review_required": severity != "routine",
         "reasons": reasons,
-        "rule_version": "2026-07-23",
+        "rule_version": config.ESCALATION_RULE_VERSION,
     }
 
 
@@ -167,19 +177,32 @@ def priority_score(
     confidence: Optional[float],
     reach: int,
     adverse_event: Optional[Dict[str, Any]] = None,
+    weights: Optional[Dict[str, float]] = None,
+    weights_version: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Explainable 0-100 review priority, never a truth or harm verdict."""
+    """Explainable 0-100 review priority, never a truth or harm verdict.
+
+    Components are returned alongside the score and persisted with the
+    ``weights_version`` that produced them, so a later retune against real
+    analyst decisions can be evaluated against this one instead of quietly
+    replacing it.
+    """
+    weights = weights or config.PRIORITY_WEIGHTS
     uncertainty = 1.0 - (confidence if confidence is not None else 0.5)
-    reach_signal = min(1.0, max(0, reach) / 10_000)
+    reach_signal = min(1.0, max(0, reach) / max(1, config.REACH_SATURATION))
     harm_signal = 1.0 if adverse_event and adverse_event.get("detected") else 0.25
-    score = round(100 * (0.45 * reach_signal + 0.35 * harm_signal + 0.2 * uncertainty))
+    components = {
+        "reach": round(reach_signal, 3),
+        "potential_harm": round(harm_signal, 3),
+        "uncertainty": round(uncertainty, 3),
+    }
+    raw = sum(weights.get(name, 0.0) * value for name, value in components.items())
+    total = sum(weights.values()) or 1.0
     return {
-        "score": score,
-        "components": {
-            "reach": round(reach_signal, 3),
-            "potential_harm": round(harm_signal, 3),
-            "uncertainty": round(uncertainty, 3),
-        },
+        "score": round(100 * raw / total),
+        "components": components,
+        "weights": dict(weights),
+        "weights_version": weights_version or config.WEIGHTS_VERSION,
         "meaning": "review priority, not likelihood the claim is false",
     }
 
@@ -190,6 +213,7 @@ def assess_claim(
     fact_check_source: Optional[str] = None,
     fact_check_url: Optional[str] = None,
     reach: int = 0,
+    narrative: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     adverse = adverse_event_routing(text)
     evidence = evidence_quality(fact_check_source, fact_check_url)
@@ -198,9 +222,17 @@ def assess_claim(
         if evidence["score"] >= 2
         else "Queue evidence retrieval; do not treat the missing match as proof."
     )
+    narrative = narrative or {}
     return {
         "normalized_claim": normalize_claim(text),
         "cluster_id": cluster_id(text),
+        "narrative": {
+            "narrative_id": narrative.get("narrative_id"),
+            "label": narrative.get("label"),
+            "member_count": narrative.get("member_count"),
+            "lifecycle_state": narrative.get("lifecycle_state"),
+            "similarity": narrative.get("similarity"),
+        },
         "language": detect_language(text),
         "evidence_quality": evidence,
         "adverse_event": adverse,
@@ -211,8 +243,12 @@ def assess_claim(
             "reason": "A single claim is insufficient to infer coordinated behavior.",
         },
         "repeated_claim": {
-            "status": "cluster_candidate",
-            "instruction": "Compare cluster_id across the monitored corpus.",
+            "status": (
+                "recurring"
+                if (narrative.get("member_count") or 0) > 1
+                else "first_observation"
+            ),
+            "instruction": "Open the narrative to see every post carrying this claim.",
         },
         "modalities": ["text"],
         "response_guidance": response,
@@ -230,14 +266,28 @@ def assess_claim(
 
 
 def add_monitor_signals(rows: Iterable[Dict[str, Any]]) -> list[Dict[str, Any]]:
+    """Attach the signals the monitor ranks and renders by.
+
+    Narrative assignment happens once at write time and is read back off the
+    row, so the monitor shows the same grouping the stored record has rather
+    than recomputing a different one per request.
+    """
     enriched = []
     for original in rows:
         row = dict(original)
-        row["cluster_id"] = cluster_id(row.get("claim") or row.get("text") or "")
+        row.setdefault(
+            "cluster_id", cluster_id(row.get("claim") or row.get("text") or "")
+        )
+        reach = int(row.get("like_count") or 0) + int(row.get("retweet_count") or 0)
         row["velocity"] = velocity(
             row.get("like_count") or 0,
             row.get("retweet_count") or 0,
             row.get("timestamp"),
+        )
+        row["priority"] = priority_score(
+            row.get("confidence"),
+            reach,
+            adverse_event_routing(row.get("claim") or row.get("text") or ""),
         )
         enriched.append(row)
     return enriched
