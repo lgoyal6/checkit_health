@@ -18,7 +18,10 @@ export default function App() {
           </Link>
           <nav className="flex gap-1" aria-label="Primary navigation">
             <NavLink to="/" end className={navClass}>
-              Monitor
+              Narratives
+            </NavLink>
+            <NavLink to="/posts" className={navClass}>
+              Posts
             </NavLink>
             <NavLink to="/check" className={navClass}>
               Check
@@ -33,7 +36,8 @@ export default function App() {
         <Outlet />
       </main>
       <footer className="mx-auto max-w-6xl px-4 py-8 text-center text-xs text-slate-400">
-        Health misinformation monitor — not medical advice.
+        Health misinformation monitor. Analyst decision support, not medical
+        advice, and it never posts on your behalf.
       </footer>
     </div>
   );

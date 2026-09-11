@@ -4,16 +4,20 @@ import { describe, expect, it } from "vitest";
 import App from "./App.jsx";
 
 describe("App navigation", () => {
-  it("offers Monitor, Check, and History navigation", () => {
+  it("offers Narratives, Posts, Check, and History navigation", () => {
     render(
       <MemoryRouter>
         <App />
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("link", { name: "Monitor" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Narratives" })).toHaveAttribute(
       "href",
       "/",
+    );
+    expect(screen.getByRole("link", { name: "Posts" })).toHaveAttribute(
+      "href",
+      "/posts",
     );
     expect(screen.getByRole("link", { name: "Check" })).toHaveAttribute(
       "href",

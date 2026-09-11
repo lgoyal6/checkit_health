@@ -5,6 +5,8 @@ import App from "./App.jsx";
 import CheckPage from "./pages/CheckPage.jsx";
 import HistoryPage from "./pages/HistoryPage.jsx";
 import MonitorPage from "./pages/MonitorPage.jsx";
+import NarrativePage from "./pages/NarrativePage.jsx";
+import NarrativeQueue from "./pages/NarrativeQueue.jsx";
 import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
@@ -12,7 +14,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<App />}>
-          <Route index element={<MonitorPage />} />
+          <Route index element={<NarrativeQueue />} />
+          <Route path="narratives/:narrativeId" element={<NarrativePage />} />
+          <Route path="posts" element={<MonitorPage />} />
           <Route path="check" element={<CheckPage />} />
           <Route path="history" element={<HistoryPage />} />
         </Route>
