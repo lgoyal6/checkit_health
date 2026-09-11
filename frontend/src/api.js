@@ -118,7 +118,10 @@ export async function getStats(window = "7d") {
   return res.json();
 }
 
-export async function updateReview(postId, { status, note, actor, analystKey }) {
+export async function updateReview(
+  postId,
+  { status, note, actor, analystKey },
+) {
   const res = await fetch(
     `${API_URL}/claims/${encodeURIComponent(postId)}/review`,
     {
@@ -135,4 +138,133 @@ export async function updateReview(postId, { status, note, actor, analystKey }) 
     throw new Error(body.detail || `Review update failed (${res.status})`);
   }
   return res.json();
+}
+
+// --- narrative ledger ------------------------------------------------------
+
+async function getJson(path, label) {
+  const res = await fetch(`${API_URL}${path}`);
+  if (!res.ok) throw new Error(`Failed to load ${label} (${res.status})`);
+  return res.json();
+}
+
+// Capability disclosure. The monitor uses this to say plainly when grouping is
+// running on the offline embedding, which only merges near-identical wording,
+// rather than implying semantic narrative detection it isn't doing.
+export async function getMeta() {
+  return getJson("/meta", "settings");
+}
+
+export async function getNarratives({
+  limit = 100,
+  topic = "",
+  lifecycleState = "",
+} = {}) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (topic) params.set("topic", topic);
+  if (lifecycleState) params.set("lifecycle_state", lifecycleState);
+  return getJson(`/narratives?${params.toString()}`, "narratives");
+}
+
+export async function getNarrative(narrativeId) {
+  return getJson(`/narratives/${encodeURIComponent(narrativeId)}`, "narrative");
+}
+
+export function narrativeReportUrl(narrativeId, format = "html") {
+  return `${API_URL}/narratives/${encodeURIComponent(narrativeId)}/report?format=${format}`;
+}
+
+export function exportUrl(
+  kind,
+  { window = "7d", topic = "", source = "" } = {},
+) {
+  if (kind === "narratives") return `${API_URL}/export/narratives.csv`;
+  const params = new URLSearchParams({ window, limit: "2000" });
+  if (topic) params.set("topic", topic);
+  if (source) params.set("source", source);
+  return `${API_URL}/export/claims.csv?${params.toString()}`;
+}
+
+function analystHeaders(analystKey) {
+  return {
+    "Content-Type": "application/json",
+    ...(analystKey ? { "X-Analyst-Key": analystKey } : {}),
+  };
+}
+
+async function readError(res, fallback) {
+  const body = await res.json().catch(() => ({}));
+  const detail = body.detail;
+  if (detail && typeof detail === "object") {
+    const error = new Error(detail.message || fallback);
+    error.reason = detail.reason;
+    throw error;
+  }
+  throw new Error(detail || fallback);
+}
+
+export async function setNarrativeStatus(narrativeId, status, analystKey) {
+  const res = await fetch(
+    `${API_URL}/narratives/${encodeURIComponent(narrativeId)}/status`,
+    {
+      method: "PATCH",
+      headers: analystHeaders(analystKey),
+      body: JSON.stringify({ status }),
+    },
+  );
+  if (!res.ok) await readError(res, `Status update failed (${res.status})`);
+  return res.json();
+}
+
+// Ask for a counter-message draft. The mode (pre-bunk vs debunk) is decided by
+// the backend from where the narrative sits on its curve, not chosen here: a
+// rumor most people haven't seen yet gets inoculation against the tactic, not
+// a restatement of the claim.
+export async function draftResponse(narrativeId, { author, analystKey } = {}) {
+  const res = await fetch(
+    `${API_URL}/narratives/${encodeURIComponent(narrativeId)}/responses`,
+    {
+      method: "POST",
+      headers: analystHeaders(analystKey),
+      body: JSON.stringify({ author: author || "analyst" }),
+    },
+  );
+  if (!res.ok)
+    await readError(res, `Could not draft a response (${res.status})`);
+  return res.json();
+}
+
+export async function decideResponse(
+  responseId,
+  { status, approvedBy, note, analystKey } = {},
+) {
+  const res = await fetch(
+    `${API_URL}/responses/${encodeURIComponent(responseId)}`,
+    {
+      method: "PATCH",
+      headers: analystHeaders(analystKey),
+      body: JSON.stringify({
+        status,
+        approved_by: approvedBy || "analyst",
+        note: note || "",
+      }),
+    },
+  );
+  if (!res.ok) await readError(res, `Decision failed (${res.status})`);
+  return res.json();
+}
+
+// Approved drafts only. There is no publish path anywhere in this client: the
+// export is text a person copies and sends themselves.
+export async function getResponseText(responseId, analystKey) {
+  const res = await fetch(
+    `${API_URL}/responses/${encodeURIComponent(responseId)}/text`,
+    { headers: analystKey ? { "X-Analyst-Key": analystKey } : {} },
+  );
+  if (!res.ok) await readError(res, `Export failed (${res.status})`);
+  return res.text();
+}
+
+export async function getTuning(k = 20) {
+  return getJson(`/tuning/weights?k=${k}`, "tuning report");
 }
