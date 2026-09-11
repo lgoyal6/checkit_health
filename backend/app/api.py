@@ -23,13 +23,19 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 import config
+import ledger
+import narrative_store as ns
+import reporting
+import response as response_layer
 import storage
+import tuning
 from classifier import _classify_one, is_falsifiable
 from claim_report import generate_claim_report, ClaimReportResponse
 from fact_checker import check_claim
@@ -90,6 +96,26 @@ class ReviewRequest(BaseModel):
     status: str
     note: str = ""
     actor: str = "analyst"
+
+
+class NarrativeStatusRequest(BaseModel):
+    status: str
+
+
+class ResponseRequest(BaseModel):
+    """Ask for a counter-message draft. Mode is derived, not chosen.
+
+    The caller cannot force a debunk on a narrative that is still emerging:
+    restating a rumor to an audience that has not seen it spreads it, so the
+    lifecycle state decides the mode.
+    """
+    author: str = "analyst"
+
+
+class ResponseDecisionRequest(BaseModel):
+    status: str
+    approved_by: str = "analyst"
+    note: str = ""
 
 
 def _genai_client() -> Any:
@@ -207,11 +233,16 @@ def _run_check(submitted_text: str) -> CheckResponse:
         resp.evidence_state = (
             "retrieved" if resp.retrieval.get("evidence") else "insufficient"
         )
+        # A pasted statement has no social reach of its own, so the reach
+        # component is genuinely zero here. Reach-weighted scoring happens on
+        # the monitor path, where the number is real; see ledger.score_records.
         resp.assessment = assess_claim(
             claim_text,
             resp.confidence,
             resp.fact_check_source,
             resp.fact_check_url,
+            reach=0,
+            narrative=_narrative_hint(claim_text),
         )
         _persist_check(text, resp)
     return resp
@@ -255,6 +286,37 @@ def job_status(job_id: str) -> Dict[str, Any]:
     return result
 
 
+def _narrative_hint(claim_text: str) -> Dict[str, Any]:
+    """Which tracked narrative this pasted claim looks like, if any.
+
+    Read-only lookup so the Check page can say "this is the 5th post carrying
+    this rumor" instead of showing an opaque cluster hash. Failure is silent:
+    a missing narrative link must never break a classification.
+    """
+    try:
+        import narratives as nar_mod
+        vector = nar_mod.embed([claim_text])[0]
+        with ns.connect() as (conn, backend):
+            candidates = ns._load_candidates(conn, backend)
+            canonical = {
+                row["narrative_id"]: row["canonical_claim"]
+                for row in ns.fetch_all_canonical(conn, backend)
+            }
+        decision = nar_mod.assign(vector, candidates)
+        if decision.is_new or not decision.narrative_id:
+            return {}
+        narrative = ns.fetch_narrative(decision.narrative_id) or {}
+        return {
+            "narrative_id": decision.narrative_id,
+            "label": narrative.get("label") or canonical.get(decision.narrative_id),
+            "member_count": narrative.get("member_count"),
+            "lifecycle_state": narrative.get("lifecycle_state"),
+            "similarity": round(decision.similarity, 4),
+        }
+    except Exception:
+        return {}
+
+
 def _persist_check(original_text: str, resp: CheckResponse) -> None:
     """Save a live web check to Postgres so it shows up in /history.
 
@@ -295,6 +357,14 @@ def _persist_check(original_text: str, resp: CheckResponse) -> None:
         storage.write_postgres([record])
     except Exception as e:  # pragma: no cover - defensive, logged only
         print(f"[warn] failed to persist web check: {e}")
+        return
+    # Fold it into the narrative ledger: a pasted statement is usually a
+    # variant of something already circulating, and an analyst should see it
+    # against that history rather than as an isolated row.
+    try:
+        ledger.ingest([record])
+    except Exception as e:  # pragma: no cover - defensive, logged only
+        print(f"[warn] failed to add web check to the narrative ledger: {e}")
 
 
 @app.post("/report", response_model=ClaimReportResponse)
@@ -426,8 +496,6 @@ def review_claim(post_id: str, req: ReviewRequest, request: Request) -> Dict[str
     _authorize_analyst(request)
     if req.status not in {"unreviewed", "in_review", "accepted", "rejected", "needs_evidence"}:
         raise HTTPException(status_code=422, detail="Invalid review status")
-    if not storage.postgres_enabled():
-        raise HTTPException(status_code=503, detail="Review workflow requires Postgres")
     result = storage.update_review(post_id, req.status, req.note[:2000], req.actor[:120])
     if not result:
         raise HTTPException(status_code=404, detail="Claim not found")
@@ -437,6 +505,303 @@ def review_claim(post_id: str, req: ReviewRequest, request: Request) -> Dict[str
 @app.get("/claims/{post_id}/audit")
 def claim_audit(post_id: str, request: Request) -> List[Dict[str, Any]]:
     _authorize_analyst(request)
-    if not storage.postgres_enabled():
-        return []
     return storage.fetch_audit(post_id)
+
+
+# --- narrative ledger ------------------------------------------------------
+#
+# The narrative, not the post, is the unit an analyst tracks. These endpoints
+# expose the ledger: what rumors are circulating, how each is growing, what
+# evidence is attached, what a human decided, and what response was drafted.
+
+
+@app.get("/meta")
+def meta() -> Dict[str, Any]:
+    """Versions and capability disclosure, so the UI can tell the truth.
+
+    Clustering quality in particular: with no managed embedding configured the
+    grouping only merges near-identical wording, and the interface should say
+    that rather than implying semantic narrative detection.
+    """
+    return {
+        "model": config.MODEL_NAME,
+        "weights_version": config.WEIGHTS_VERSION,
+        "priority_weights": config.PRIORITY_WEIGHTS,
+        "escalation_rule_version": config.ESCALATION_RULE_VERSION,
+        "exploration_rate": config.EXPLORATION_RATE,
+        "clustering": ns.clustering_quality(),
+        "response_drafting": {
+            "enabled": config.RESPONSE_ENABLED,
+            "allowed_evidence_states": sorted(config.RESPONSE_ALLOWED_EVIDENCE_STATES),
+            "publishes": False,
+            "protocols": response_layer.PROTOCOLS,
+        },
+        "report_version": reporting.REPORT_VERSION,
+    }
+
+
+@app.get("/narratives")
+def list_narratives(
+    limit: int = 100,
+    topic: Optional[str] = None,
+    lifecycle_state: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    try:
+        return ns.fetch_narratives(
+            limit=max(1, min(limit, 500)),
+            topic=topic or None,
+            lifecycle_state=lifecycle_state or None,
+        )
+    except Exception as e:
+        print(f"[warn] narrative list failed: {e}")
+        return []
+
+
+@app.get("/narratives/{narrative_id}")
+def get_narrative(narrative_id: str) -> Dict[str, Any]:
+    narrative = ns.fetch_narrative(narrative_id)
+    if not narrative:
+        raise HTTPException(status_code=404, detail="Narrative not found")
+    snapshots = ns.fetch_snapshots(narrative_id)
+    import narratives as nar_mod
+    return {
+        "narrative": narrative,
+        "members": ns.fetch_narrative_members(narrative_id),
+        "evidence": ns.fetch_narrative_evidence(narrative_id),
+        "responses": ns.fetch_responses(narrative_id=narrative_id),
+        "trajectory": nar_mod.trajectory(snapshots).as_dict(),
+        "snapshots": snapshots,
+        "response_mode": response_layer.mode_for_lifecycle(
+            narrative.get("lifecycle_state")
+        ),
+    }
+
+
+@app.patch("/narratives/{narrative_id}/status")
+def update_narrative_status(
+    narrative_id: str, req: NarrativeStatusRequest, request: Request
+) -> Dict[str, Any]:
+    _authorize_analyst(request)
+    allowed = {"watching", "reviewing", "responded", "archived", "resolved"}
+    if req.status not in allowed:
+        raise HTTPException(
+            status_code=422, detail=f"status must be one of: {', '.join(sorted(allowed))}"
+        )
+    if not ns.set_narrative_status(narrative_id, req.status):
+        raise HTTPException(status_code=404, detail="Narrative not found")
+    return {"narrative_id": narrative_id, "status": req.status}
+
+
+@app.get("/narratives/{narrative_id}/report")
+def narrative_report(narrative_id: str, format: str = "json"):
+    """Situation report for one narrative, assembled from stored rows only.
+
+    ``format=html`` returns a printable page; the browser's own print-to-PDF is
+    the PDF path, which keeps a rendering dependency out of the deployment.
+    """
+    report = reporting.build_situation_report(narrative_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Narrative not found")
+    if format == "html":
+        return HTMLResponse(reporting.render_html(report))
+    if format == "json":
+        return report
+    raise HTTPException(status_code=422, detail="format must be json or html")
+
+
+# --- exports ---------------------------------------------------------------
+
+
+def _csv_response(body: str, filename: str) -> Response:
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/export/claims.csv")
+def export_claims(
+    window: str = "7d",
+    topic: Optional[str] = None,
+    source: Optional[str] = None,
+    limit: int = 500,
+) -> Response:
+    """The analyst's working export: the rows the monitor is showing, as CSV.
+
+    Same filters as /monitor on purpose, so what you export is what you see.
+    """
+    rows: List[Dict[str, Any]] = []
+    if storage.postgres_enabled():
+        try:
+            rows = storage.fetch_trending(
+                window=window, topic=topic or None, source=source or None,
+                limit=max(1, min(limit, 2000)),
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        except Exception as e:
+            print(f"[warn] export read failed: {e}")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return _csv_response(reporting.claims_csv(rows), f"checkit-claims-{stamp}.csv")
+
+
+@app.get("/export/narratives.csv")
+def export_narratives(limit: int = 500) -> Response:
+    try:
+        rows = ns.fetch_narratives(limit=max(1, min(limit, 2000)))
+    except Exception as e:
+        print(f"[warn] narrative export failed: {e}")
+        rows = []
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return _csv_response(
+        reporting.narratives_csv(rows), f"checkit-narratives-{stamp}.csv"
+    )
+
+
+# --- response drafting -----------------------------------------------------
+#
+# Drafts only. There is no endpoint here that posts, schedules, or authenticates
+# to any platform, and there deliberately never will be: the moment this system
+# can publish, it stops being decision support.
+
+
+@app.post("/narratives/{narrative_id}/responses", status_code=201)
+@limiter.limit("10/minute")
+def draft_response(
+    narrative_id: str, req: ResponseRequest, request: Request
+) -> Dict[str, Any]:
+    _authorize_analyst(request)
+    narrative = ns.fetch_narrative(narrative_id)
+    if not narrative:
+        raise HTTPException(status_code=404, detail="Narrative not found")
+
+    report = reporting.build_situation_report(narrative_id)
+    evidence = report["evidence"]
+    evidence_state = report["summary"]["evidence_state"]
+
+    try:
+        mode = response_layer.check_preconditions(
+            evidence_state, evidence, narrative.get("lifecycle_state")
+        )
+    except response_layer.ResponseRefusal as refusal:
+        # 409, not 400: the request is well-formed, the narrative is simply not
+        # in a state where drafting a response is defensible.
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": refusal.reason, "message": refusal.detail},
+        ) from refusal
+
+    if not config.GOOGLE_API_KEY:
+        raise HTTPException(status_code=503, detail="GOOGLE_API_KEY not configured")
+
+    try:
+        draft = response_layer.generate_draft(
+            _genai_client(), narrative["canonical_claim"], evidence, mode
+        )
+    except response_layer.ResponseRefusal as refusal:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": refusal.reason, "message": refusal.detail},
+        ) from refusal
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail="The AI model is busy right now — please try again in a moment.",
+        ) from e
+
+    saved = ns.save_response(
+        narrative_id=narrative_id,
+        mode=mode,
+        protocol=response_layer.PROTOCOLS[mode],
+        draft=draft.model_dump(),
+        citations=draft.citations,
+        evidence_state=evidence_state,
+        author=req.author,
+    )
+    storage_ok = True
+    try:
+        storage.record_audit(narrative_id, f"response:drafted:{mode}", req.author, "")
+    except Exception:
+        storage_ok = False
+    saved["audit_recorded"] = storage_ok
+    return saved
+
+
+@app.get("/narratives/{narrative_id}/responses")
+def list_responses(narrative_id: str) -> List[Dict[str, Any]]:
+    return ns.fetch_responses(narrative_id=narrative_id)
+
+
+@app.patch("/responses/{response_id}")
+def decide_response(
+    response_id: str, req: ResponseDecisionRequest, request: Request
+) -> Dict[str, Any]:
+    """Approve or reject a draft. Only approved drafts can be exported."""
+    _authorize_analyst(request)
+    if req.status not in {"approved", "rejected"}:
+        raise HTTPException(
+            status_code=422, detail="status must be approved or rejected"
+        )
+    result = ns.decide_response(
+        response_id, req.status, req.approved_by, req.note
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Response not found")
+    try:
+        storage.record_audit(
+            result["narrative_id"], f"response:{req.status}", req.approved_by, req.note
+        )
+    except Exception:
+        pass
+    return result
+
+
+@app.get("/responses/{response_id}/text")
+def response_text(response_id: str, request: Request) -> PlainTextResponse:
+    """Export an approved draft as plain text for a human to send.
+
+    Gated on approval: an unapproved draft is not an artifact anyone should be
+    able to copy out of the tool by guessing a URL.
+    """
+    _authorize_analyst(request)
+    saved = ns.fetch_response(response_id)
+    if not saved:
+        raise HTTPException(status_code=404, detail="Response not found")
+    if saved.get("status") != "approved":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "not_approved",
+                "message": "Only an approved draft can be exported. Have a "
+                           "reviewer approve it first.",
+            },
+        )
+    narrative = ns.fetch_narrative(saved["narrative_id"]) or {}
+    return PlainTextResponse(
+        response_layer.render_plain_text(saved["draft"], narrative.get("label", ""))
+    )
+
+
+# --- feedback loop ---------------------------------------------------------
+
+
+@app.get("/tuning/weights")
+def tuning_weights(k: int = 20, request: Request = None) -> Dict[str, Any]:
+    """Compare the weights in force against ones fitted to analyst decisions.
+
+    Read-only and advisory: this never changes the live weights. Shipping a
+    candidate is a deliberate deploy of WEIGHTS_VERSION, so a retune is always
+    something a person did, not something that happened.
+    """
+    try:
+        rows = ns.fetch_scored_outcomes()
+    except Exception as e:
+        print(f"[warn] tuning read failed: {e}")
+        rows = []
+    result = tuning.fit(rows, k=max(1, min(k, 200)))
+    payload = result.as_dict()
+    payload["live_weights"] = config.PRIORITY_WEIGHTS
+    payload["live_weights_version"] = config.WEIGHTS_VERSION
+    payload["applies_automatically"] = False
+    return payload
