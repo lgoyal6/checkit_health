@@ -196,6 +196,17 @@ def main() -> int:
         write_postgres(records)
         wrote_postgres = True
 
+    # Stage 3.5: fold the batch into the narrative ledger. This assigns each
+    # claim to a rumor, appends an engagement snapshot so growth stays
+    # measurable across runs, and records the triage score that was in force.
+    # Best effort: a ledger hiccup must not lose an ingest that already wrote.
+    ledger_summary = {}
+    try:
+        import ledger
+        ledger_summary = ledger.ingest(records, db_path=args.db)
+    except Exception as e:
+        print(f"[warn] narrative ledger update failed: {e}")
+
     print("=" * 56)
     print("Checkit Health pipeline summary")
     print("=" * 56)
@@ -214,6 +225,18 @@ def main() -> int:
     print(f"  Wrote SQLite:                 {args.db}")
     if wrote_postgres:
         print(f"  Wrote Postgres:               {len(records)} rows upserted")
+    if ledger_summary:
+        clustering = ledger_summary.get("clustering", {})
+        print(f"  Narratives touched:           {ledger_summary['narratives']}")
+        print(f"  Engagement snapshots:         {ledger_summary['snapshots']}")
+        print(f"  Triage scores recorded:       {ledger_summary['scores']} "
+              f"({ledger_summary.get('exploration_selected', 0)} in the "
+              f"exploration slot)")
+        print(f"  Clustering:                   "
+              f"{clustering.get('embedding_mode')} @ {clustering.get('threshold')}")
+        if not clustering.get("semantic"):
+            print("    note: offline embedding groups near-identical wording "
+                  "only; set GOOGLE_API_KEY for semantic narratives")
     return 0
 
 
