@@ -7,11 +7,16 @@ are gaining reach on public social platforms. It is a monitoring and triage
 tool - not a medical authority, automated moderation system, or substitute for
 clinical advice.
 
-The app answers three practical questions:
+The app answers five practical questions:
 
 1. What potentially checkable health claims are circulating?
-2. Which of them have the most engagement right now?
-3. Is there an existing published fact-check that an analyst should review?
+2. Which rumors are growing fastest right now, and where are they spreading?
+3. What does the published medical literature actually say about each one?
+4. Which ones has a qualified person already ruled on, and what did they decide?
+5. If a response is warranted, what would a well-formed one look like?
+
+It answers the fifth as a draft only. Checkit has no ability to publish
+anything, by design.
 
 ## Current workflow
 
@@ -19,9 +24,16 @@ The app answers three practical questions:
 Public post or pasted statement
   → identify a concrete health claim
   → determine whether it is specific and falsifiable
-  → look for a matching ClaimReview fact-check
-  → show the analyst the claim, context, and any linked source
+  → group it with every other post carrying the same rumor
+  → record reach now, so growth is measurable on the next run
+  → look for a matching ClaimReview fact-check and retrieve medical evidence
+  → show the analyst the narrative, its trajectory, and its sources
+  → the analyst decides; optionally draft a response for a human to send
 ```
+
+The unit an analyst works is the narrative, not the post. A rumor that appears
+in forty posts across four platforms is one thing to track, one set of evidence
+to gather, and one decision to make.
 
 For scheduled monitoring, the same workflow runs in batches after posts are
 ranked by engagement. The Monitor page presents those stored results. For a
