@@ -38,6 +38,7 @@ export default function App() {
       <footer className="mx-auto max-w-6xl px-4 py-8 text-center text-xs text-slate-400">
         Health misinformation monitor. Analyst decision support, not medical
         advice, and it never posts on your behalf.
+        <p className="mt-2"><a href="https://github.com/lgoyal6/checkit_health" target="_blank" rel="noopener noreferrer" className="text-slate-600 underline">GitHub</a></p>
       </footer>
     </div>
   );
